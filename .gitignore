@@ -1,0 +1,46 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# build
+dist/
+build/
+
+# database
+server/data/*.db
+
+# logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# local env files
+.env*.local
+.env
+
+# uploads
+server/public/uploads/*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Mac
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Thumbnails
+._*
+
+# backup
+*.bak
+
+# testing
+coverage/
