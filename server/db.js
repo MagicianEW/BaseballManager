@@ -17,6 +17,16 @@ async function getDb() {
 
   // 初始化表
   db.run(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT UNIQUE NOT NULL,
+      password TEXT NOT NULL,
+      role TEXT DEFAULT 'player',
+      isActive INTEGER DEFAULT 1,
+      isInitial INTEGER DEFAULT 0,
+      createdAt TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE TABLE IF NOT EXISTS teams (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
@@ -125,6 +135,19 @@ async function getDb() {
       FOREIGN KEY (teamId) REFERENCES teams(id)
     );
   `)
+
+  // 创建初始管理员（如果不存在）
+  const adminExists = db.exec("SELECT COUNT(*) FROM users WHERE isInitial = 1")
+  if (adminExists[0]?.values[0][0] === 0) {
+    // 密码是 admin，使用 bcrypt 加密
+    const bcrypt = (await import('bcryptjs')).default
+    const hashedPassword = bcrypt.hashSync('admin', 10)
+    db.run(
+      "INSERT INTO users (username, password, role, isActive, isInitial) VALUES (?, ?, ?, ?, ?)",
+      ['admin', hashedPassword, 'admin', 1, 1]
+    )
+    saveDb()
+  }
 
   saveDb()
   return db

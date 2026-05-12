@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { api } from '../utils/api'
+import { useAuth } from '../context/AuthContext'
 
 function Teams() {
+  const { canWrite } = useAuth()
   const [teams, setTeams] = useState([])
   const [editing, setEditing] = useState(null)
   const [form, setForm] = useState({ name: '', stadium: '', logo: '' })
@@ -18,6 +20,7 @@ function Teams() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    if (!canWrite('teams')) return
     if (editing) {
       await api.teams.update(editing.id, form)
     } else {
@@ -37,6 +40,7 @@ function Teams() {
   }
 
   const handleDelete = async (id) => {
+    if (!canWrite('teams')) return
     if (confirm('确定删除？')) {
       await api.teams.delete(id)
       loadTeams()
@@ -44,6 +48,7 @@ function Teams() {
   }
 
   const startEdit = (team) => {
+    if (!canWrite('teams')) return
     setEditing(team)
     setForm({ name: team.name, stadium: team.stadium, logo: team.logo || '' })
     setPreviewUrl(team.logo ? `http://localhost:3001${team.logo}` : null)
@@ -80,76 +85,78 @@ function Teams() {
     <div>
       <h1 className="text-2xl font-bold mb-4">球队管理</h1>
 
-      <form onSubmit={handleSubmit} className="bg-white p-4 rounded shadow mb-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">球队名称</label>
-            <input
-              type="text"
-              placeholder="输入球队名称"
-              value={form.name}
-              onChange={e => setForm({ ...form, name: e.target.value })}
-              className="border p-2 rounded w-full"
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">主场球场</label>
-            <input
-              type="text"
-              placeholder="输入主场球场"
-              value={form.stadium}
-              onChange={e => setForm({ ...form, stadium: e.target.value })}
-              className="border p-2 rounded w-full"
-            />
-          </div>
-        </div>
-
-        <div className="mt-4">
-          <label className="block text-sm font-medium text-gray-700 mb-1">队徽图片</label>
-          <div className="flex items-center gap-4">
-            <input
-              type="file"
-              ref={fileInputRef}
-              accept="image/*"
-              onChange={handleFileChange}
-              className="border p-2 rounded"
-              disabled={uploading}
-            />
-            {uploading && <span className="text-blue-600">上传中...</span>}
-          </div>
-
-          {previewUrl && (
-            <div className="mt-4">
-              <img
-                src={previewUrl}
-                alt="队徽预览"
-                className="w-24 h-24 object-contain border rounded"
+      {canWrite('teams') && (
+        <form onSubmit={handleSubmit} className="bg-white p-4 rounded shadow mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">球队名称</label>
+              <input
+                type="text"
+                placeholder="输入球队名称"
+                value={form.name}
+                onChange={e => setForm({ ...form, name: e.target.value })}
+                className="border p-2 rounded w-full"
+                required
               />
-              <p className="text-sm text-gray-500 mt-1">预览</p>
             </div>
-          )}
-        </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">主场球场</label>
+              <input
+                type="text"
+                placeholder="输入主场球场"
+                value={form.stadium}
+                onChange={e => setForm({ ...form, stadium: e.target.value })}
+                className="border p-2 rounded w-full"
+              />
+            </div>
+          </div>
 
-        <div className="mt-6 flex gap-2">
-          <button
-            type="submit"
-            className="bg-green-800 text-white px-4 py-2 rounded hover:bg-green-700"
-            disabled={uploading}
-          >
-            {editing ? '更新' : '添加'}球队
-          </button>
-          {editing && (
+          <div className="mt-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">队徽图片</label>
+            <div className="flex items-center gap-4">
+              <input
+                type="file"
+                ref={fileInputRef}
+                accept="image/*"
+                onChange={handleFileChange}
+                className="border p-2 rounded"
+                disabled={uploading}
+              />
+              {uploading && <span className="text-blue-600">上传中...</span>}
+            </div>
+
+            {previewUrl && (
+              <div className="mt-4">
+                <img
+                  src={previewUrl}
+                  alt="队徽预览"
+                  className="w-24 h-24 object-contain border rounded"
+                />
+                <p className="text-sm text-gray-500 mt-1">预览</p>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-6 flex gap-2">
             <button
-              type="button"
-              onClick={resetForm}
-              className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600"
+              type="submit"
+              className="bg-green-800 text-white px-4 py-2 rounded hover:bg-green-700"
+              disabled={uploading}
             >
-              取消
+              {editing ? '更新' : '添加'}球队
             </button>
-          )}
-        </div>
-      </form>
+            {editing && (
+              <button
+                type="button"
+                onClick={resetForm}
+                className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600"
+              >
+                取消
+              </button>
+            )}
+          </div>
+        </form>
+      )}
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
         {teams.map(team => (
@@ -172,27 +179,29 @@ function Teams() {
                 <p className="text-gray-600 text-sm">{team.stadium || '未设置主场'}</p>
               </div>
             </div>
-            <div className="mt-3 flex gap-2">
-              <button
-                onClick={() => startEdit(team)}
-                className="text-blue-600 text-sm hover:text-blue-800"
-              >
-                编辑
-              </button>
-              <button
-                onClick={() => handleDelete(team.id)}
-                className="text-red-600 text-sm hover:text-red-800"
-              >
-                删除
-              </button>
-            </div>
+            {canWrite('teams') && (
+              <div className="mt-3 flex gap-2">
+                <button
+                  onClick={() => startEdit(team)}
+                  className="text-blue-600 text-sm hover:text-blue-800"
+                >
+                  编辑
+                </button>
+                <button
+                  onClick={() => handleDelete(team.id)}
+                  className="text-red-600 text-sm hover:text-red-800"
+                >
+                  删除
+                </button>
+              </div>
+            )}
           </div>
         ))}
       </div>
 
       {teams.length === 0 && (
         <div className="text-center text-gray-500 py-8">
-          暂无球队，点击上方按钮添加
+          {canWrite('teams') ? '暂无球队，点击上方按钮添加' : '暂无球队数据'}
         </div>
       )}
     </div>

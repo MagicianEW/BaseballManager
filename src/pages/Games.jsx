@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../utils/api'
+import { useAuth } from '../context/AuthContext'
 
 function Games() {
+  const { canWrite } = useAuth()
   const [games, setGames] = useState([])
   const [teams, setTeams] = useState([])
   const [players, setPlayers] = useState([])
@@ -17,7 +19,11 @@ function Games() {
   useEffect(() => { loadData() }, [])
 
   const loadData = async () => {
-    const [g, t, p] = await Promise.all([api.getGames(), api.getTeams(), api.getPlayers()])
+    const [g, t, p] = await Promise.all([
+      api.games.getAll(),
+      api.teams.getAll(),
+      api.players.getAll()
+    ])
     setGames(g)
     setTeams(t)
     setPlayers(p)
@@ -27,6 +33,7 @@ function Games() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    if (!canWrite('games')) return
     const { homeLineup, awayLineup, homePitcherId, awayPitcherId, ...rest } = form
     const data = {
       ...rest,
@@ -35,7 +42,7 @@ function Games() {
       homePitcherId: parseInt(homePitcherId) || null,
       awayPitcherId: parseInt(awayPitcherId) || null
     }
-    await api.createGame(data)
+    await api.games.create(data)
     setShowForm(false)
     loadData()
   }
@@ -53,14 +60,16 @@ function Games() {
   }
 
   const handleDelete = async (id) => {
+    if (!canWrite('games')) return
     if (confirm('确定删除比赛？')) {
-      await api.deleteGame(id)
+      await api.games.delete(id)
       loadData()
     }
   }
 
   const startGame = async (id) => {
-    await api.updateGame(id, { status: 'in_progress' })
+    if (!canWrite('games')) return
+    await api.games.update(id, { status: 'in_progress' })
     loadData()
   }
 
@@ -68,13 +77,15 @@ function Games() {
     <div>
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold">比赛管理</h1>
-        <button onClick={() => setShowForm(!showForm)}
-          className="bg-green-800 text-white px-4 py-2 rounded">
-          {showForm ? '取消' : '新建比赛'}
-        </button>
+        {canWrite('games') && (
+          <button onClick={() => setShowForm(!showForm)}
+            className="bg-green-800 text-white px-4 py-2 rounded">
+            {showForm ? '取消' : '新建比赛'}
+          </button>
+        )}
       </div>
 
-      {showForm && (
+      {showForm && canWrite('games') && (
         <form onSubmit={handleSubmit} className="bg-white p-4 rounded shadow mb-6">
           <div className="grid grid-cols-2 gap-4 mb-4">
             <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })}
@@ -180,13 +191,15 @@ function Games() {
                   </span>
                 </td>
                 <td className="p-2">
-                  {game.status === 'scheduled' && (
+                  {game.status === 'scheduled' && canWrite('games') && (
                     <button onClick={() => startGame(game.id)} className="text-blue-600 mr-2">开始</button>
                   )}
                   {game.status === 'in_progress' && (
                     <Link to={`/game/${game.id}`} className="text-green-600 mr-2">打分</Link>
                   )}
-                  <button onClick={() => handleDelete(game.id)} className="text-red-600">删除</button>
+                  {canWrite('games') && (
+                    <button onClick={() => handleDelete(game.id)} className="text-red-600">删除</button>
+                  )}
                 </td>
               </tr>
             ))}

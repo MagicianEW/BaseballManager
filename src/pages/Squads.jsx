@@ -1,11 +1,10 @@
 import { useState, useEffect } from 'react'
 import { api } from '../utils/api'
+import { useAuth } from '../context/AuthContext'
 import { AGE_GROUPS, SQUAD_LEVEL_LABELS } from '../constants/baseball'
 
-/**
- * 梯队管理页面
- */
 function Squads() {
+  const { canWrite } = useAuth()
   const [squads, setSquads] = useState([])
   const [teams, setTeams] = useState([])
   const [players, setPlayers] = useState([])
@@ -20,9 +19,7 @@ function Squads() {
     ageGroup: ''
   })
 
-  useEffect(() => {
-    loadData()
-  }, [])
+  useEffect(() => { loadData() }, [])
 
   const loadData = async () => {
     const [s, t, p] = await Promise.all([
@@ -42,6 +39,7 @@ function Squads() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    if (!canWrite('squads')) return
     if (editing) {
       await api.squads.update(editing.id, form)
     } else {
@@ -58,6 +56,7 @@ function Squads() {
   }
 
   const startEdit = (squad) => {
+    if (!canWrite('squads')) return
     setEditing(squad)
     setForm({
       name: squad.name,
@@ -69,6 +68,7 @@ function Squads() {
   }
 
   const handleDelete = async (id) => {
+    if (!canWrite('squads')) return
     if (confirm('确定删除此梯队？球员不会被删除，只会解除与梯队的关联。')) {
       await api.squads.delete(id)
       loadData()
@@ -85,7 +85,7 @@ function Squads() {
   }
 
   const handlePromotePlayer = async (player) => {
-    // 获取当前球队的所有梯队
+    if (!canWrite('squads')) return
     const teamSquads = squads.filter(s => s.teamId === player.teamId)
     const currentSquadIndex = teamSquads.findIndex(s => s.id === player.squadId)
     const nextSquad = teamSquads[currentSquadIndex + 1]
@@ -102,7 +102,6 @@ function Squads() {
     }
   }
 
-  // 按球队分组显示梯队
   const squadsByTeam = teams.map(team => ({
     team,
     squads: squads.filter(s => s.teamId === team.id)
@@ -112,16 +111,17 @@ function Squads() {
     <div>
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold">梯队管理</h1>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          className="bg-green-800 text-white px-4 py-2 rounded hover:bg-green-700"
-        >
-          {showForm ? '取消' : '新建梯队'}
-        </button>
+        {canWrite('squads') && (
+          <button
+            onClick={() => setShowForm(!showForm)}
+            className="bg-green-800 text-white px-4 py-2 rounded hover:bg-green-700"
+          >
+            {showForm ? '取消' : '新建梯队'}
+          </button>
+        )}
       </div>
 
-      {/* 创建/编辑表单 */}
-      {showForm && (
+      {showForm && canWrite('squads') && (
         <form onSubmit={handleSubmit} className="bg-white p-4 rounded shadow mb-6">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div>
@@ -189,7 +189,6 @@ function Squads() {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* 梯队列表 */}
         <div className="lg:col-span-1">
           <div className="bg-white rounded shadow">
             <div className="p-4 border-b">
@@ -197,7 +196,9 @@ function Squads() {
             </div>
             <div className="p-4">
               {squadsByTeam.length === 0 ? (
-                <p className="text-gray-500 text-center py-4">暂无梯队，请先创建梯队</p>
+                <p className="text-gray-500 text-center py-4">
+                  {canWrite('squads') ? '暂无梯队，请先创建梯队' : '暂无梯队'}
+                </p>
               ) : (
                 squadsByTeam.map(({ team, squads: teamSquads }) => (
                   <div key={team.id} className="mb-4">
@@ -228,7 +229,6 @@ function Squads() {
           </div>
         </div>
 
-        {/* 梯队详情 */}
         <div className="lg:col-span-2">
           {selectedSquad ? (
             <div className="bg-white rounded shadow">
@@ -240,20 +240,22 @@ function Squads() {
                     {selectedSquad.ageGroup && ` · ${selectedSquad.ageGroup}`}
                   </p>
                 </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => startEdit(selectedSquad)}
-                    className="text-blue-600 hover:text-blue-800"
-                  >
-                    编辑
-                  </button>
-                  <button
-                    onClick={() => handleDelete(selectedSquad.id)}
-                    className="text-red-600 hover:text-red-800"
-                  >
-                    删除
-                  </button>
-                </div>
+                {canWrite('squads') && (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => startEdit(selectedSquad)}
+                      className="text-blue-600 hover:text-blue-800"
+                    >
+                      编辑
+                    </button>
+                    <button
+                      onClick={() => handleDelete(selectedSquad.id)}
+                      className="text-red-600 hover:text-red-800"
+                    >
+                      删除
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="p-4">
@@ -268,7 +270,7 @@ function Squads() {
                         <th className="p-2 text-left">姓名</th>
                         <th className="p-2 text-left">位置</th>
                         <th className="p-2 text-left">投打</th>
-                        <th className="p-2 text-left">操作</th>
+                        {canWrite('squads') && <th className="p-2 text-left">操作</th>}
                       </tr>
                     </thead>
                     <tbody>
@@ -280,14 +282,16 @@ function Squads() {
                             {player.positions ? JSON.parse(player.positions).join(', ') : '-'}
                           </td>
                           <td className="p-2">{player.throws}/{player.bats}</td>
-                          <td className="p-2">
-                            <button
-                              onClick={() => handlePromotePlayer(player)}
-                              className="text-green-600 hover:text-green-800 text-sm"
-                            >
-                              晋升
-                            </button>
-                          </td>
+                          {canWrite('squads') && (
+                            <td className="p-2">
+                              <button
+                                onClick={() => handlePromotePlayer(player)}
+                                className="text-green-600 hover:text-green-800 text-sm"
+                              >
+                                晋升
+                              </button>
+                            </td>
+                          )}
                         </tr>
                       ))}
                     </tbody>
