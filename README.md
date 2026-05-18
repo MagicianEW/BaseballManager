@@ -137,6 +137,33 @@ npm run build
 npm run preview
 ```
 
+## 部署说明
+
+### 环境变量配置
+
+⚠️ **必须设置 `JWT_SECRET` 环境变量**，否则服务器无法启动。
+
+**生成强随机密钥：**
+```bash
+node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
+```
+
+**设置环境变量：**
+
+Linux/macOS：
+```bash
+export JWT_SECRET="你的64字节十六进制密钥"
+```
+
+Render / Railway 等平台：在后台设置环境变量 `JWT_SECRET`
+
+### 初始账号
+
+- 用户名：`admin`
+- 密码：`admin`
+
+⚠️ **首次登录后请立即修改管理员密码！**
+
 ## 使用流程
 
 1. **登录** - 使用初始管理员账户 `admin` / `admin` 登录
