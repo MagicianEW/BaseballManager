@@ -27,6 +27,10 @@ router.get('/:id', async (req, res) => {
 // 创建球员
 router.post('/', async (req, res) => {
   try {
+    const { name } = req.body
+    if (!name || typeof name !== 'string' || name.trim().length === 0) {
+      return res.status(400).json({ error: '球员姓名必填' })
+    }
     const player = await playerService.create(req.body)
     res.json(player)
   } catch (error) {

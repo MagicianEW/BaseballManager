@@ -27,6 +27,13 @@ router.get('/:id', async (req, res) => {
 // 创建比赛
 router.post('/', async (req, res) => {
   try {
+    const { homeTeamId, awayTeamId, date } = req.body
+    if (!homeTeamId || !awayTeamId) {
+      return res.status(400).json({ error: '主队和客队必填' })
+    }
+    if (!date) {
+      return res.status(400).json({ error: '比赛日期必填' })
+    }
     const game = await gameService.create(req.body)
     res.json(game)
   } catch (error) {
