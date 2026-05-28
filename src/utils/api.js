@@ -229,6 +229,20 @@ export const api = {
   squads: squadsAPI,
   health: healthAPI,
   upload: uploadAPI,
+  // 兼容 AppContext 的调用方式
+  getTeams: () => teamsAPI.getAll(),
+  getPlayers: () => playersAPI.getAll(),
+  getGames: () => gamesAPI.getAll(),
+  getGame: (id) => gamesAPI.getById(id),
+  createTeam: (data) => teamsAPI.create(data),
+  updateTeam: (id, data) => teamsAPI.update(id, data),
+  deleteTeam: (id) => teamsAPI.delete(id),
+  createPlayer: (data) => playersAPI.create(data),
+  updatePlayer: (id, data) => playersAPI.update(id, data),
+  deletePlayer: (id) => playersAPI.delete(id),
+  createGame: (data) => gamesAPI.create(data),
+  updateGame: (id, data) => gamesAPI.update(id, data),
+  addPlateAppearance: (gameId, data) => gamesAPI.addPlateAppearance(gameId, data),
 }
 
 export default api
