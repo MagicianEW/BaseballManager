@@ -58,43 +58,53 @@ function GameLive() {
     const pitcherId = half === 'top' ? game.awayPitcherId : game.homePitcherId
     const batterId = currentBatter
 
-    await api.addPlateAppearance(game.id, {
-      inning, half, paNumber, batterId, pitcherId, result,
-      rbi: result === 'HR' ? 1 : 0,
-      runsScored: 0
-    })
+    // 保存当前状态用于回滚
+    const savedGame = { ...game }
 
-    // 更新局面
-    let newOuts = game.outs
-    let newBaseSituation = game.baseSituation
-    let newHomeScore = game.homeScore
-    let newAwayScore = game.awayScore
+    try {
+      await api.addPlateAppearance(game.id, {
+        inning, half, paNumber, batterId, pitcherId, result,
+        rbi: result === 'HR' ? 1 : 0,
+        runsScored: 0
+      })
 
-    if (['SO', 'GO', 'FO', 'GDP'].includes(result)) {
-      newOuts++
-      if (newOuts >= 3) {
-        // 半局结束
-        newOuts = 0
-        newBaseSituation = '---'
+      // 更新局面
+      let newOuts = game.outs
+      let newBaseSituation = game.baseSituation
+      let newHomeScore = game.homeScore
+      let newAwayScore = game.awayScore
+
+      if (['SO', 'GO', 'FO', 'GDP'].includes(result)) {
+        newOuts++
+        if (newOuts >= 3) {
+          // 半局结束
+          newOuts = 0
+          newBaseSituation = '---'
+        }
+      } else if (['1B', '2B', '3B', 'HR'].includes(result)) {
+        newBaseSituation = advanceBase(newBaseSituation, result)
+        if (result === 'HR') {
+          if (half === 'top') newAwayScore++
+          else newHomeScore++
+        }
+      } else if (['BB', 'HBP'].includes(result)) {
+        newBaseSituation = advanceBase(newBaseSituation, 'walk')
       }
-    } else if (['1B', '2B', '3B', 'HR'].includes(result)) {
-      newBaseSituation = advanceBase(newBaseSituation, result)
-      if (result === 'HR') {
-        if (half === 'top') newAwayScore++
-        else newHomeScore++
-      }
-    } else if (['BB', 'HBP'].includes(result)) {
-      newBaseSituation = advanceBase(newBaseSituation, 'walk')
+
+      await api.updateGame(game.id, {
+        outs: newOuts,
+        baseSituation: newBaseSituation,
+        homeScore: newHomeScore,
+        awayScore: newAwayScore
+      })
+
+      loadGame()
+    } catch (error) {
+      console.error('记录打席失败:', error)
+      // 回滚本地状态
+      setGame(savedGame)
+      alert('记录打席失败，请重试')
     }
-
-    await api.updateGame(game.id, {
-      outs: newOuts,
-      baseSituation: newBaseSituation,
-      homeScore: newHomeScore,
-      awayScore: newAwayScore
-    })
-
-    loadGame()
   }
 
   const advanceBase = (situation, result) => {
