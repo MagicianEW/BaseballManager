@@ -11,6 +11,7 @@ export function usePolling(fetchFn, interval = 2000, enabled = true) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const fetchRef = useRef(fetchFn)
+  const timerRef = useRef(null)
 
   useEffect(() => {
     fetchRef.current = fetchFn
@@ -32,9 +33,14 @@ export function usePolling(fetchFn, interval = 2000, enabled = true) {
     }
 
     fetch()
-    const timer = setInterval(fetch, interval)
+    timerRef.current = setInterval(fetch, interval)
 
-    return () => clearInterval(timer)
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current)
+        timerRef.current = null
+      }
+    }
   }, [interval, enabled])
 
   return { data, loading, error }
