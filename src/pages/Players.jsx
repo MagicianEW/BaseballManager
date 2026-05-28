@@ -9,6 +9,7 @@ function Players() {
   const [teams, setTeams] = useState([])
   const [squads, setSquads] = useState([])
   const [editing, setEditing] = useState(null)
+  const [validationErrors, setValidationErrors] = useState({})
   const [form, setForm] = useState({
     name: '', number: '', bats: 'R', throws: 'R',
     positions: [], height: '', weight: '', birthdate: '',
@@ -48,6 +49,7 @@ function Players() {
       teamId: '', squadId: '', photo: ''
     })
     setEditing(null)
+    setValidationErrors({})
   }
 
   const handleDelete = async (id) => {
