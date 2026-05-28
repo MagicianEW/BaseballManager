@@ -63,12 +63,25 @@ function Players() {
   const startEdit = (player) => {
     if (!canWrite('players')) return
     setEditing(player)
+    // 统一解析 positions：可能是 JSON 字符串或已经是数组
+    let playerPositions = []
+    if (player.positions) {
+      if (typeof player.positions === 'string') {
+        try {
+          playerPositions = JSON.parse(player.positions)
+        } catch {
+          playerPositions = []
+        }
+      } else if (Array.isArray(player.positions)) {
+        playerPositions = player.positions
+      }
+    }
     setForm({
       name: player.name,
       number: player.number,
       bats: player.bats || 'R',
       throws: player.throws || 'R',
-      positions: player.positions ? JSON.parse(player.positions) : [],
+      positions: playerPositions,
       height: player.height || '',
       weight: player.weight || '',
       birthdate: player.birthdate || '',
@@ -188,7 +201,7 @@ function Players() {
                 <td className="p-2">{getSquadName(player.squadId)}</td>
                 <td className="p-2">{player.throws}/{player.bats}</td>
                 <td className="p-2">
-                  {player.positions ? JSON.parse(player.positions).join(', ') : '-'}
+                  {player.positions ? (Array.isArray(player.positions) ? player.positions.join(', ') : (() => { try { return JSON.parse(player.positions).join(', ') } catch { return '-' } })()) : '-'}
                 </td>
                 {canWrite('players') && (
                   <td className="p-2">
