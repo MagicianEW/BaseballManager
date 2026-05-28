@@ -115,12 +115,6 @@ function Login() {
             </Link>
           </p>
         </div>
-
-        <div className="mt-8 p-4 bg-gray-100 rounded text-sm text-gray-600">
-          <p className="font-semibold mb-2">{t('initialAdmin')}</p>
-          <p>{t('username')}: admin</p>
-          <p>{t('password')}: admin</p>
-        </div>
       </div>
     </div>
   )
