@@ -95,6 +95,10 @@ async function getDb() {
       FOREIGN KEY (pitcherId) REFERENCES players(id)
     );
 
+    -- TODO: player_stats 表与 plate_appearances 存在字段重叠
+    -- plate_appearances 已记录详细打席数据 (result, rbi, runsScored 等)
+    -- player_stats 表的 ab, h, r, rbi 等字段可通过 plate_appearances 汇总计算
+    -- 考虑在未来版本中移除 player_stats 表，或仅用于缓存预计算结果
     CREATE TABLE IF NOT EXISTS player_stats (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       playerId INTEGER,

@@ -2,6 +2,11 @@ import { getDb } from '../db.js'
 
 /**
  * 统计服务层
+ * 
+ * TODO: player_stats 表与 plate_appearances 存在字段重叠
+ * 当前实现同时从 player_stats 表查询统计数据，
+ * 但这些字段可以通过 plate_appearances 表的 result 等字段汇总计算得到。
+ * 考虑在未来版本中统一数据源。
  */
 export const statsService = {
   async getPlayerStats(playerId) {
