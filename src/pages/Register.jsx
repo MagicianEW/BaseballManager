@@ -135,12 +135,9 @@ function Register() {
               className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
             >
               <option value={ROLES.PLAYER}>球员（只读权限）</option>
-              <option value={ROLES.COACH}>教练/统计员（编辑权限）</option>
             </select>
             <p className="text-sm text-gray-500 mt-2">
-              {role === ROLES.PLAYER
-                ? '可以浏览所有页面和数据，但不能编辑'
-                : '可以浏览和编辑比赛、球员、梯队等数据（不含用户管理）'}
+              可以浏览所有页面和数据，但不能编辑
             </p>
           </div>
 
