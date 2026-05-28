@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useApp } from '../context/AppContext'
+import { API_BASE_URL } from '../utils/apiConfig'
 
 function Login() {
   const [username, setUsername] = useState('')
@@ -30,7 +31,7 @@ function Login() {
   const getLogoUrl = (logo) => {
     if (!logo) return null
     if (logo.startsWith('http')) return logo
-    return `http://localhost:3001${logo}`
+    return `${API_BASE_URL}${logo}`
   }
 
   const theme = localStorage.getItem('theme') || 'green'
