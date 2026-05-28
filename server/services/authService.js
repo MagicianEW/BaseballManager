@@ -2,7 +2,10 @@ import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { getDb, saveDb } from '../db.js'
 
-const JWT_SECRET = process.env.JWT_SECRET || 'baseball-manager-secret-key-2024'
+const JWT_SECRET = process.env.JWT_SECRET
+if (!JWT_SECRET) {
+  throw new Error('JWT_SECRET environment variable must be set in production')
+}
 const JWT_EXPIRES = '24h'
 
 // 用户角色

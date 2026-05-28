@@ -65,7 +65,7 @@ app.post('/api/upload/team-logo', upload.single('logo'), (req, res) => {
 
 // 删除图片路由
 app.delete('/api/upload/:filename', (req, res) => {
-  const filename = req.params.filename
+  const filename = path.basename(req.params.filename)
   const filepath = path.join(uploadDir, filename)
   if (fs.existsSync(filepath)) {
     fs.unlinkSync(filepath)
