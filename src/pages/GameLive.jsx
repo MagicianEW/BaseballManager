@@ -1,21 +1,15 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { api } from '../utils/api'
+import { PLAY_RESULTS, RESULT_LABELS, RESULT_CATEGORIES } from '../constants/baseball'
 
-const HIT_RESULTS = [
-  { value: '1B', label: '一垒安打' },
-  { value: '2B', label: '二垒安打' },
-  { value: '3B', label: '三垒安打' },
-  { value: 'HR', label: '本垒打' },
-  { value: 'SO', label: '三振' },
-  { value: 'GO', label: '外野飞球' },
-  { value: 'FO', label: '高飞球' },
-  { value: 'GDP', label: '双杀打' },
-  { value: 'BB', label: '四坏球' },
-  { value: 'HBP', label: '触身球' },
-  { value: 'SAC', label: '牺牲触击' },
-  { value: 'SF', label: '牺牲飞球' }
-]
+// 使用 constants 中定义的出局类型
+const OUT_RESULTS = RESULT_CATEGORIES.outs.items
+
+// 生成打席结果选项（从 RESULT_LABELS）
+const HIT_RESULTS = Object.entries(RESULT_LABELS)
+  .filter(([key]) => !['SB', 'CS', 'PK', 'WP', 'BALK', 'PB', 'E', 'IBB'].includes(key))
+  .map(([value, label]) => ({ value, label }))
 
 function GameLive() {
   const { id } = useParams()
@@ -74,7 +68,7 @@ function GameLive() {
       let newHomeScore = game.homeScore
       let newAwayScore = game.awayScore
 
-      if (['SO', 'GO', 'FO', 'GDP'].includes(result)) {
+      if (OUT_RESULTS.includes(result)) {
         newOuts++
         if (newOuts >= 3) {
           // 半局结束

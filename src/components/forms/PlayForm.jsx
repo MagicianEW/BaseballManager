@@ -1,4 +1,4 @@
-import { RESULT_CATEGORIES, RESULT_LABELS } from '../../constants/baseball'
+import { RESULT_CATEGORIES, RESULT_LABELS, PLAY_RESULTS } from '../../constants/baseball'
 
 /**
  * 打席记录表单组件
@@ -57,10 +57,10 @@ export function ResultBadge({ result }) {
 }
 
 function getResultColor(result) {
-  const hitResults = ['1B', '2B', '3B', 'HR']
-  const outResults = ['SO', 'GO', 'FO', 'GDP']
-  const walkResults = ['BB', 'HBP', 'IBB']
-  const baserunResults = ['SB', 'CS']
+  const hitResults = RESULT_CATEGORIES.hits.items
+  const outResults = RESULT_CATEGORIES.outs.items
+  const walkResults = RESULT_CATEGORIES.walks.items
+  const baserunResults = RESULT_CATEGORIES.baserunning.items
 
   if (hitResults.includes(result)) return 'bg-green-100 text-green-800'
   if (outResults.includes(result)) return 'bg-red-100 text-red-800'
