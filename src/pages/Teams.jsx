@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { api } from '../utils/api'
 import { useAuth } from '../context/AuthContext'
+import { API_BASE_URL } from '../utils/apiConfig'
 
 function Teams() {
   const { canWrite } = useAuth()
@@ -51,7 +52,7 @@ function Teams() {
     if (!canWrite('teams')) return
     setEditing(team)
     setForm({ name: team.name, stadium: team.stadium, logo: team.logo || '' })
-    setPreviewUrl(team.logo ? `http://localhost:3001${team.logo}` : null)
+    setPreviewUrl(team.logo ? `${API_BASE_URL}${team.logo}` : null)
   }
 
   const handleFileChange = async (e) => {
@@ -78,7 +79,7 @@ function Teams() {
   const getLogoUrl = (logo) => {
     if (!logo) return null
     if (logo.startsWith('http')) return logo
-    return `http://localhost:3001${logo}`
+    return `${API_BASE_URL}${logo}`
   }
 
   return (
