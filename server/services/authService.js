@@ -37,7 +37,7 @@ export const authService = {
     const db = await getDb()
 
     // 检查用户名是否已存在
-    const existing = db.exec(`SELECT id FROM users WHERE username = '${username}'`)
+    const existing = db.exec(`SELECT id FROM users WHERE username = ?`, [username])
     if (existing[0]?.values.length > 0) {
       throw new Error('用户名已存在')
     }
@@ -65,7 +65,7 @@ export const authService = {
   async login(username, password) {
     const db = await getDb()
 
-    const result = db.exec(`SELECT * FROM users WHERE username = '${username}'`)
+    const result = db.exec(`SELECT * FROM users WHERE username = ?`, [username])
     if (!result[0]?.values[0]) {
       throw new Error('用户名或密码错误')
     }
@@ -105,7 +105,7 @@ export const authService = {
     const db = await getDb()
 
     // 检查用户名是否已存在
-    const existing = db.exec(`SELECT id FROM users WHERE username = '${newUsername}'`)
+    const existing = db.exec(`SELECT id FROM users WHERE username = ?`, [newUsername])
     if (existing[0]?.values.length > 0) {
       throw new Error('用户名已存在')
     }
@@ -154,7 +154,7 @@ export const authService = {
   async deleteUser(userId) {
     const db = await getDb()
     // 不能删除初始管理员
-    const user = db.exec(`SELECT isInitial FROM users WHERE id = ${userId}`)
+    const user = db.exec(`SELECT isInitial FROM users WHERE id = ?`, [userId])
     if (user[0]?.values[0]?.[0] === 1) {
       throw new Error('不能删除初始管理员')
     }
@@ -188,7 +188,7 @@ export const authService = {
   // 获取用户信息
   async getUserById(userId) {
     const db = await getDb()
-    const result = db.exec(`SELECT id, username, role, isActive, isInitial FROM users WHERE id = ${userId}`)
+    const result = db.exec(`SELECT id, username, role, isActive, isInitial FROM users WHERE id = ?`, [userId])
     if (!result[0]?.values[0]) return null
     const row = result[0].values[0]
     return {
