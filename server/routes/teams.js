@@ -27,6 +27,10 @@ router.get('/:id', async (req, res) => {
 // 创建球队
 router.post('/', async (req, res) => {
   try {
+    const { name } = req.body
+    if (!name || typeof name !== 'string' || name.trim().length === 0) {
+      return res.status(400).json({ error: '球队名称必填' })
+    }
     const team = await teamService.create(req.body)
     res.json(team)
   } catch (error) {

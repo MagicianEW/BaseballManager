@@ -37,6 +37,13 @@ router.get('/team/:teamId', async (req, res) => {
 // 创建梯队
 router.post('/', async (req, res) => {
   try {
+    const { name, teamId } = req.body
+    if (!name || typeof name !== 'string' || name.trim().length === 0) {
+      return res.status(400).json({ error: '梯队名称必填' })
+    }
+    if (!teamId) {
+      return res.status(400).json({ error: '所属球队必填' })
+    }
     const squad = await squadService.create(req.body)
     res.json(squad)
   } catch (error) {
