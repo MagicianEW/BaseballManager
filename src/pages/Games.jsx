@@ -2,9 +2,11 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../utils/api'
 import { useAuth } from '../context/AuthContext'
+import { useApp } from '../context/AppContext'
 
 function Games() {
   const { canWrite } = useAuth()
+  const { t } = useApp()
   const [games, setGames] = useState([])
   const [teams, setTeams] = useState([])
   const [players, setPlayers] = useState([])
@@ -61,7 +63,7 @@ function Games() {
 
   const handleDelete = async (id) => {
     if (!canWrite('games')) return
-    if (confirm('确定删除比赛？')) {
+    if (confirm(t('confirmDeleteGame'))) {
       await api.games.delete(id)
       loadData()
     }
@@ -76,11 +78,11 @@ function Games() {
   return (
     <div>
       <div className="flex justify-between items-center mb-4">
-        <h1 className="text-2xl font-bold">比赛管理</h1>
+        <h1 className="text-2xl font-bold">{t('gameManagement')}</h1>
         {canWrite('games') && (
           <button onClick={() => setShowForm(!showForm)}
             className="bg-green-800 text-white px-4 py-2 rounded">
-            {showForm ? '取消' : '新建比赛'}
+            {showForm ? t('cancel') : t('createGame')}
           </button>
         )}
       </div>
@@ -93,12 +95,12 @@ function Games() {
             <div className="flex gap-4">
               <select value={form.homeTeamId} onChange={e => setForm({ ...form, homeTeamId: e.target.value })}
                 className="border p-2 rounded flex-1">
-                <option value="">主队</option>
+                <option value="">{t('homeTeam')}</option>
                 {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
               </select>
               <select value={form.awayTeamId} onChange={e => setForm({ ...form, awayTeamId: e.target.value })}
                 className="border p-2 rounded flex-1">
-                <option value="">客队</option>
+                <option value="">{t('awayTeam')}</option>
                 {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
               </select>
             </div>
@@ -106,20 +108,20 @@ function Games() {
 
           <div className="grid grid-cols-2 gap-4 mb-4">
             <div>
-              <label className="block font-medium mb-2">主队先发投手：</label>
+              <label className="block font-medium mb-2">{t('homeStartingPitcher')}</label>
               <select value={form.homePitcherId} onChange={e => setForm({ ...form, homePitcherId: e.target.value })}
                 className="border p-2 rounded w-full">
-                <option value="">选择投手</option>
+                <option value="">{t('selectPitcher')}</option>
                 {getTeamPlayers(form.homeTeamId).map(p => (
                   <option key={p.id} value={p.id}>{p.number} {p.name}</option>
                 ))}
               </select>
             </div>
             <div>
-              <label className="block font-medium mb-2">客队先发投手：</label>
+              <label className="block font-medium mb-2">{t('awayStartingPitcher')}</label>
               <select value={form.awayPitcherId} onChange={e => setForm({ ...form, awayPitcherId: e.target.value })}
                 className="border p-2 rounded w-full">
-                <option value="">选择投手</option>
+                <option value="">{t('selectPitcher')}</option>
                 {getTeamPlayers(form.awayTeamId).map(p => (
                   <option key={p.id} value={p.id}>{p.number} {p.name}</option>
                 ))}
@@ -129,11 +131,11 @@ function Games() {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block font-medium mb-2">主队打线：</label>
+              <label className="block font-medium mb-2">{t('homeLineup')}</label>
               {form.homeLineup.map((id, i) => (
                 <select key={i} value={id} onChange={e => handleLineupChange('home', i, e.target.value)}
                   className="border p-2 rounded w-full mb-1">
-                  <option value="">第{i + 1}棒</option>
+                  <option value="">{t('battingOrderSlot').replace('{order}', i + 1)}</option>
                   {getTeamPlayers(form.homeTeamId).map(p => (
                     <option key={p.id} value={p.id}>{p.number} {p.name}</option>
                   ))}
@@ -141,11 +143,11 @@ function Games() {
               ))}
             </div>
             <div>
-              <label className="block font-medium mb-2">客队打线：</label>
+              <label className="block font-medium mb-2">{t('awayLineup')}</label>
               {form.awayLineup.map((id, i) => (
                 <select key={i} value={id} onChange={e => handleLineupChange('away', i, e.target.value)}
                   className="border p-2 rounded w-full mb-1">
-                  <option value="">第{i + 1}棒</option>
+                  <option value="">{t('battingOrderSlot').replace('{order}', i + 1)}</option>
                   {getTeamPlayers(form.awayTeamId).map(p => (
                     <option key={p.id} value={p.id}>{p.number} {p.name}</option>
                   ))}
@@ -155,7 +157,7 @@ function Games() {
           </div>
 
           <button type="submit" className="mt-4 bg-green-800 text-white px-4 py-2 rounded">
-            创建比赛
+            {t('createGame')}
           </button>
         </form>
       )}
@@ -164,10 +166,10 @@ function Games() {
         <table className="w-full">
           <thead className="bg-gray-100">
             <tr>
-              <th className="p-2 text-left">日期</th>
-              <th className="p-2 text-left">比分</th>
-              <th className="p-2 text-left">状态</th>
-              <th className="p-2 text-left">操作</th>
+              <th className="p-2 text-left">{t('date')}</th>
+              <th className="p-2 text-left">{t('score')}</th>
+              <th className="p-2 text-left">{t('status')}</th>
+              <th className="p-2 text-left">{t('action')}</th>
             </tr>
           </thead>
           <tbody>
@@ -187,18 +189,18 @@ function Games() {
                     game.status === 'in_progress' ? 'bg-blue-100 text-blue-800' :
                     'bg-gray-100 text-gray-600'
                   }`}>
-                    {game.status === 'completed' ? '已完成' : game.status === 'in_progress' ? '进行中' : '未开始'}
+                    {game.status === 'completed' ? t('completed') : game.status === 'in_progress' ? t('inProgress') : t('notStarted')}
                   </span>
                 </td>
                 <td className="p-2">
                   {game.status === 'scheduled' && canWrite('games') && (
-                    <button onClick={() => startGame(game.id)} className="text-blue-600 mr-2">开始</button>
+                    <button onClick={() => startGame(game.id)} className="text-blue-600 mr-2">{t('gameStart')}</button>
                   )}
                   {game.status === 'in_progress' && (
-                    <Link to={`/game/${game.id}`} className="text-green-600 mr-2">打分</Link>
+                    <Link to={`/game/${game.id}`} className="text-green-600 mr-2">{t('scoring')}</Link>
                   )}
                   {canWrite('games') && (
-                    <button onClick={() => handleDelete(game.id)} className="text-red-600">删除</button>
+                    <button onClick={() => handleDelete(game.id)} className="text-red-600">{t('delete')}</button>
                   )}
                 </td>
               </tr>

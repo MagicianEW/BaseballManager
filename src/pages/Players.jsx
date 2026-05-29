@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react'
 import { api } from '../utils/api'
 import { useAuth } from '../context/AuthContext'
+import { useApp } from '../context/AppContext'
 import { POSITIONS } from '../constants/baseball'
 
 function Players() {
   const { canWrite } = useAuth()
+  const { t } = useApp()
   const [players, setPlayers] = useState([])
   const [teams, setTeams] = useState([])
   const [squads, setSquads] = useState([])
@@ -54,7 +56,7 @@ function Players() {
 
   const handleDelete = async (id) => {
     if (!canWrite('players')) return
-    if (confirm('确定删除？')) {
+    if (confirm(t('confirmDeletePlayer'))) {
       await api.players.delete(id)
       loadData()
     }
@@ -117,36 +119,36 @@ function Players() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-4">球员管理</h1>
+      <h1 className="text-2xl font-bold mb-4">{t('playerManagement')}</h1>
 
       {canWrite('players') && (
         <form onSubmit={handleSubmit} className="bg-white p-4 rounded shadow mb-6">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <input type="text" placeholder="姓名" value={form.name}
+            <input type="text" placeholder={t('name')} value={form.name}
               onChange={e => setForm({ ...form, name: e.target.value })} className="border p-2 rounded" required />
-            <input type="text" placeholder="球衣号" value={form.number}
+            <input type="text" placeholder={t('jerseyNumber')} value={form.number}
               onChange={e => setForm({ ...form, number: e.target.value })} className="border p-2 rounded" />
             <select value={form.bats} onChange={e => setForm({ ...form, bats: e.target.value })} className="border p-2 rounded">
-              <option value="R">右打</option>
-              <option value="L">左打</option>
-              <option value="S">左右开</option>
+              <option value="R">{t('rightBats')}</option>
+              <option value="L">{t('leftBats')}</option>
+              <option value="S">{t('switchBats')}</option>
             </select>
             <select value={form.throws} onChange={e => setForm({ ...form, throws: e.target.value })} className="border p-2 rounded">
-              <option value="R">右手</option>
-              <option value="L">左手</option>
+              <option value="R">{t('rightThrows')}</option>
+              <option value="L">{t('leftThrows')}</option>
             </select>
-            <input type="text" placeholder="身高(cm)" value={form.height}
+            <input type="text" placeholder={t('height')} value={form.height}
               onChange={e => setForm({ ...form, height: e.target.value })} className="border p-2 rounded" />
-            <input type="text" placeholder="体重(kg)" value={form.weight}
+            <input type="text" placeholder={t('weight')} value={form.weight}
               onChange={e => setForm({ ...form, weight: e.target.value })} className="border p-2 rounded" />
             <input type="date" value={form.birthdate}
               onChange={e => setForm({ ...form, birthdate: e.target.value })} className="border p-2 rounded" />
             <select value={form.teamId} onChange={e => handleTeamChange(e.target.value)} className="border p-2 rounded">
-              <option value="">选择球队</option>
+              <option value="">{t('selectTeam')}</option>
               {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
             <select value={form.squadId} onChange={e => setForm({ ...form, squadId: e.target.value })} className="border p-2 rounded">
-              <option value="">选择梯队</option>
+              <option value="">{t('selectSquad')}</option>
               {filteredSquads.map(s => (
                 <option key={s.id} value={s.id}>{s.name}</option>
               ))}
@@ -154,7 +156,7 @@ function Players() {
           </div>
 
           <div className="mt-4">
-            <label className="block mb-2">守备位置：</label>
+            <label className="block mb-2">{t('defensivePosition')}</label>
             <div className="flex flex-wrap gap-2">
               {POSITIONS.map(pos => (
                 <button key={pos.code} type="button"
@@ -168,11 +170,11 @@ function Players() {
 
           <div className="mt-4 flex gap-2">
             <button type="submit" className="bg-green-800 text-white px-4 py-2 rounded">
-              {editing ? '更新' : '添加'}球员
+              {editing ? t('updatePlayer') : t('addPlayer')}
             </button>
             {editing && (
               <button type="button" onClick={resetForm} className="bg-gray-500 text-white px-4 py-2 rounded">
-                取消
+                {t('cancel')}
               </button>
             )}
           </div>
@@ -183,13 +185,13 @@ function Players() {
         <table className="w-full">
           <thead className="bg-gray-100">
             <tr>
-              <th className="p-2 text-left">号码</th>
-              <th className="p-2 text-left">姓名</th>
-              <th className="p-2 text-left">球队</th>
-              <th className="p-2 text-left">梯队</th>
-              <th className="p-2 text-left">投打</th>
-              <th className="p-2 text-left">位置</th>
-              {canWrite('players') && <th className="p-2 text-left">操作</th>}
+              <th className="p-2 text-left">{t('jerseyNumber')}</th>
+              <th className="p-2 text-left">{t('name')}</th>
+              <th className="p-2 text-left">{t('teams')}</th>
+              <th className="p-2 text-left">{t('squads')}</th>
+              <th className="p-2 text-left">{t('throwsBats')}</th>
+              <th className="p-2 text-left">{t('position')}</th>
+              {canWrite('players') && <th className="p-2 text-left">{t('action')}</th>}
             </tr>
           </thead>
           <tbody>
@@ -205,8 +207,8 @@ function Players() {
                 </td>
                 {canWrite('players') && (
                   <td className="p-2">
-                    <button onClick={() => startEdit(player)} className="text-blue-600 mr-2">编辑</button>
-                    <button onClick={() => handleDelete(player.id)} className="text-red-600">删除</button>
+                    <button onClick={() => startEdit(player)} className="text-blue-600 mr-2">{t('edit')}</button>
+                    <button onClick={() => handleDelete(player.id)} className="text-red-600">{t('delete')}</button>
                   </td>
                 )}
               </tr>

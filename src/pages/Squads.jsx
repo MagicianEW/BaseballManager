@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react'
 import { api } from '../utils/api'
 import { useAuth } from '../context/AuthContext'
+import { useApp } from '../context/AppContext'
 import { AGE_GROUPS, SQUAD_LEVEL_LABELS } from '../constants/baseball'
 
 function Squads() {
   const { canWrite } = useAuth()
+  const { t } = useApp()
   const [squads, setSquads] = useState([])
   const [teams, setTeams] = useState([])
   const [players, setPlayers] = useState([])
@@ -69,7 +71,7 @@ function Squads() {
 
   const handleDelete = async (id) => {
     if (!canWrite('squads')) return
-    if (confirm('确定删除此梯队？球员不会被删除，只会解除与梯队的关联。')) {
+    if (confirm(t('confirmDeleteSquad'))) {
       await api.squads.delete(id)
       loadData()
       if (selectedSquad?.id === id) {
@@ -91,11 +93,11 @@ function Squads() {
     const nextSquad = teamSquads[currentSquadIndex + 1]
 
     if (!nextSquad) {
-      alert('该球员已在最高级别梯队')
+      alert(t('playerAlreadyTopLevel'))
       return
     }
 
-    if (confirm(`确认将 ${player.name} 晋升到 ${nextSquad.name}？`)) {
+    if (confirm(t('confirmPromotePlayer').replace('{playerName}', player.name).replace('{squadName}', nextSquad.name))) {
       await api.players.promote(player.id, nextSquad.id)
       loadData()
       loadSquadPlayers(selectedSquad.id)
@@ -110,13 +112,13 @@ function Squads() {
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">梯队管理</h1>
+        <h1 className="text-2xl font-bold">{t('squadManagement')}</h1>
         {canWrite('squads') && (
           <button
             onClick={() => setShowForm(!showForm)}
             className="bg-green-800 text-white px-4 py-2 rounded hover:bg-green-700"
           >
-            {showForm ? '取消' : '新建梯队'}
+            {showForm ? t('cancel') : t('createSquad')}
           </button>
         )}
       </div>
@@ -125,32 +127,32 @@ function Squads() {
         <form onSubmit={handleSubmit} className="bg-white p-4 rounded shadow mb-6">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">梯队名称</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('squadName')}</label>
               <input
                 type="text"
                 value={form.name}
                 onChange={e => setForm({ ...form, name: e.target.value })}
                 className="border p-2 rounded w-full"
-                placeholder="如：U12、一队"
+                placeholder={t('squadName')}
                 required
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">所属球队</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('selectTeam')}</label>
               <select
                 value={form.teamId}
                 onChange={e => setForm({ ...form, teamId: e.target.value })}
                 className="border p-2 rounded w-full"
                 required
               >
-                <option value="">选择球队</option>
+                <option value="">{t('selectTeam')}</option>
                 {teams.map(t => (
                   <option key={t.id} value={t.id}>{t.name}</option>
                 ))}
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">级别</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('level')}</label>
               <select
                 value={form.level}
                 onChange={e => setForm({ ...form, level: parseInt(e.target.value) })}
@@ -162,13 +164,13 @@ function Squads() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">年龄组</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('ageGroup')}</label>
               <select
                 value={form.ageGroup}
                 onChange={e => setForm({ ...form, ageGroup: e.target.value })}
                 className="border p-2 rounded w-full"
               >
-                <option value="">选择年龄组</option>
+                <option value="">{t('selectAgeGroup')}</option>
                 {AGE_GROUPS.map(ag => (
                   <option key={ag.code} value={ag.code}>{ag.label} - {ag.description}</option>
                 ))}
@@ -177,11 +179,11 @@ function Squads() {
           </div>
           <div className="mt-4 flex gap-2">
             <button type="submit" className="bg-green-800 text-white px-4 py-2 rounded">
-              {editing ? '更新' : '创建'}梯队
+              {editing ? t('updateSquad') : t('createSquad')}
             </button>
             {editing && (
               <button type="button" onClick={resetForm} className="bg-gray-500 text-white px-4 py-2 rounded">
-                取消
+                {t('cancel')}
               </button>
             )}
           </div>
@@ -192,12 +194,12 @@ function Squads() {
         <div className="lg:col-span-1">
           <div className="bg-white rounded shadow">
             <div className="p-4 border-b">
-              <h2 className="font-bold text-lg">梯队列表</h2>
+              <h2 className="font-bold text-lg">{t('squadList')}</h2>
             </div>
             <div className="p-4">
               {squadsByTeam.length === 0 ? (
                 <p className="text-gray-500 text-center py-4">
-                  {canWrite('squads') ? '暂无梯队，请先创建梯队' : '暂无梯队'}
+                  {canWrite('squads') ? t('noSquadsCreateFirst') : t('noSquads')}
                 </p>
               ) : (
                 squadsByTeam.map(({ team, squads: teamSquads }) => (
@@ -236,7 +238,7 @@ function Squads() {
                 <div>
                   <h2 className="font-bold text-lg">{selectedSquad.name}</h2>
                   <p className="text-sm text-gray-500">
-                    {selectedSquad.teamName} · {SQUAD_LEVEL_LABELS[selectedSquad.level]}级
+                    {selectedSquad.teamName} · {SQUAD_LEVEL_LABELS[selectedSquad.level]}{t('level')}
                     {selectedSquad.ageGroup && ` · ${selectedSquad.ageGroup}`}
                   </p>
                 </div>
@@ -246,31 +248,31 @@ function Squads() {
                       onClick={() => startEdit(selectedSquad)}
                       className="text-blue-600 hover:text-blue-800"
                     >
-                      编辑
+                      {t('edit')}
                     </button>
                     <button
                       onClick={() => handleDelete(selectedSquad.id)}
                       className="text-red-600 hover:text-red-800"
                     >
-                      删除
+                      {t('delete')}
                     </button>
                   </div>
                 )}
               </div>
 
               <div className="p-4">
-                <h3 className="font-semibold mb-3">梯队球员 ({squadPlayers.length})</h3>
+                <h3 className="font-semibold mb-3">{t('squadPlayers')} ({squadPlayers.length})</h3>
                 {squadPlayers.length === 0 ? (
-                  <p className="text-gray-500 text-center py-4">暂无球员</p>
+                  <p className="text-gray-500 text-center py-4">{t('noPlayers')}</p>
                 ) : (
                   <table className="w-full">
                     <thead className="bg-gray-50">
                       <tr>
-                        <th className="p-2 text-left">号码</th>
-                        <th className="p-2 text-left">姓名</th>
-                        <th className="p-2 text-left">位置</th>
-                        <th className="p-2 text-left">投打</th>
-                        {canWrite('squads') && <th className="p-2 text-left">操作</th>}
+                        <th className="p-2 text-left">{t('number')}</th>
+                        <th className="p-2 text-left">{t('name') || '姓名'}</th>
+                        <th className="p-2 text-left">{t('position')}</th>
+                        <th className="p-2 text-left">{t('throwsBats')}</th>
+                        {canWrite('squads') && <th className="p-2 text-left">{t('action')}</th>}
                       </tr>
                     </thead>
                     <tbody>
@@ -288,7 +290,7 @@ function Squads() {
                                 onClick={() => handlePromotePlayer(player)}
                                 className="text-green-600 hover:text-green-800 text-sm"
                               >
-                                晋升
+                                {t('promote')}
                               </button>
                             </td>
                           )}
@@ -301,7 +303,7 @@ function Squads() {
             </div>
           ) : (
             <div className="bg-white rounded shadow p-8 text-center text-gray-500">
-              点击左侧梯队查看详情
+              {t('clickSquadToViewDetails')}
             </div>
           )}
         </div>
