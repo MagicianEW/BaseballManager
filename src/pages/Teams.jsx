@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
 import { api } from '../utils/api'
 import { useAuth } from '../context/AuthContext'
+import { useApp } from '../context/AppContext'
 import { API_BASE_URL } from '../utils/apiConfig'
 
 function Teams() {
   const { canWrite } = useAuth()
+  const { t } = useApp()
   const [teams, setTeams] = useState([])
   const [editing, setEditing] = useState(null)
   const [form, setForm] = useState({ name: '', stadium: '', logo: '' })
@@ -42,7 +44,7 @@ function Teams() {
 
   const handleDelete = async (id) => {
     if (!canWrite('teams')) return
-    if (confirm('确定删除？')) {
+    if (confirm(t('confirmDeleteTeam'))) {
       await api.teams.delete(id)
       loadTeams()
     }
@@ -69,7 +71,7 @@ function Teams() {
       const result = await api.upload.uploadTeamLogo(file)
       setForm({ ...form, logo: result.url })
     } catch (error) {
-      alert('上传失败: ' + error.message)
+      alert(t('uploadFailed') + error.message)
       setPreviewUrl(null)
     } finally {
       setUploading(false)
@@ -84,16 +86,16 @@ function Teams() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-4">球队管理</h1>
+      <h1 className="text-2xl font-bold mb-4">{t('teamManagement')}</h1>
 
       {canWrite('teams') && (
         <form onSubmit={handleSubmit} className="bg-white p-4 rounded shadow mb-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">球队名称</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('teamName')}</label>
               <input
                 type="text"
-                placeholder="输入球队名称"
+                placeholder={t('enterTeamName')}
                 value={form.name}
                 onChange={e => setForm({ ...form, name: e.target.value })}
                 className="border p-2 rounded w-full"
@@ -101,10 +103,10 @@ function Teams() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">主场球场</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('homeStadium')}</label>
               <input
                 type="text"
-                placeholder="输入主场球场"
+                placeholder={t('enterHomeStadium')}
                 value={form.stadium}
                 onChange={e => setForm({ ...form, stadium: e.target.value })}
                 className="border p-2 rounded w-full"
@@ -113,7 +115,7 @@ function Teams() {
           </div>
 
           <div className="mt-4">
-            <label className="block text-sm font-medium text-gray-700 mb-1">队徽图片</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{t('teamLogo')}</label>
             <div className="flex items-center gap-4">
               <input
                 type="file"
@@ -123,17 +125,17 @@ function Teams() {
                 className="border p-2 rounded"
                 disabled={uploading}
               />
-              {uploading && <span className="text-blue-600">上传中...</span>}
+              {uploading && <span className="text-blue-600">{t('uploading')}</span>}
             </div>
 
             {previewUrl && (
               <div className="mt-4">
                 <img
                   src={previewUrl}
-                  alt="队徽预览"
+                  alt={t('logoPreview')}
                   className="w-24 h-24 object-contain border rounded"
                 />
-                <p className="text-sm text-gray-500 mt-1">预览</p>
+                <p className="text-sm text-gray-500 mt-1">{t('preview')}</p>
               </div>
             )}
           </div>
@@ -144,7 +146,7 @@ function Teams() {
               className="bg-green-800 text-white px-4 py-2 rounded hover:bg-green-700"
               disabled={uploading}
             >
-              {editing ? '更新' : '添加'}球队
+              {editing ? t('updateTeam') : t('addTeam')}
             </button>
             {editing && (
               <button
@@ -152,7 +154,7 @@ function Teams() {
                 onClick={resetForm}
                 className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600"
               >
-                取消
+                {t('cancel')}
               </button>
             )}
           </div>
@@ -177,7 +179,7 @@ function Teams() {
               )}
               <div>
                 <h2 className="font-bold text-lg">{team.name}</h2>
-                <p className="text-gray-600 text-sm">{team.stadium || '未设置主场'}</p>
+                <p className="text-gray-600 text-sm">{team.stadium || t('noHomeStadium')}</p>
               </div>
             </div>
             {canWrite('teams') && (
@@ -186,13 +188,13 @@ function Teams() {
                   onClick={() => startEdit(team)}
                   className="text-blue-600 text-sm hover:text-blue-800"
                 >
-                  编辑
+                  {t('edit')}
                 </button>
                 <button
                   onClick={() => handleDelete(team.id)}
                   className="text-red-600 text-sm hover:text-red-800"
                 >
-                  删除
+                  {t('delete')}
                 </button>
               </div>
             )}
@@ -202,7 +204,7 @@ function Teams() {
 
       {teams.length === 0 && (
         <div className="text-center text-gray-500 py-8">
-          {canWrite('teams') ? '暂无球队，点击上方按钮添加' : '暂无球队数据'}
+          {canWrite('teams') ? t('noTeamsClickToAdd') : t('noTeamData')}
         </div>
       )}
     </div>
