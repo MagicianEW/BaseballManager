@@ -51,7 +51,7 @@ function Settings() {
       const result = await uploadAPI.uploadTeamLogo(file)
       setClubLogo(result.url)
     } catch (err) {
-      alert('上传失败: ' + err.message)
+      alert(t('uploadFailed') + err.message)
     } finally {
       setUploadingLogo(false)
     }
@@ -73,12 +73,12 @@ function Settings() {
     setError('')
 
     if (!newUser.username || !newUser.password) {
-      setError('用户名和密码不能为空')
+      setError(t('usernameAndPasswordRequired'))
       return
     }
 
     if (newUser.password.length < 6) {
-      setError('密码至少需要6个字符')
+      setError(t('passwordMinLength'))
       return
     }
 
@@ -97,7 +97,7 @@ function Settings() {
 
   const handleToggleStatus = async (user) => {
     if (user.isInitial) {
-      alert('不能停用初始管理员')
+      alert(t('cannotDisableInitialAdmin'))
       return
     }
     try {
@@ -110,10 +110,10 @@ function Settings() {
 
   const handleDeleteUser = async (user) => {
     if (user.isInitial) {
-      alert('不能删除初始管理员')
+      alert(t('cannotDeleteInitialAdmin'))
       return
     }
-    if (!confirm(`确定删除用户 ${user.username}？`)) return
+    if (!confirm(t('confirmDeleteUser').replace('{username}', user.username))) return
     try {
       await authAPI.deleteUser(user.id)
       loadUsers()
@@ -201,7 +201,7 @@ function Settings() {
             className="border p-2 rounded"
             disabled={uploadingLogo}
           />
-          {uploadingLogo && <span className="text-blue-600">上传中...</span>}
+          {uploadingLogo && <span className="text-blue-600">{t('uploading')}</span>}
         </div>
 
         {clubLogo && (
@@ -230,7 +230,7 @@ function Settings() {
               onClick={() => { loadUsers(); setShowModal(true); }}
               className="bg-green-800 text-white px-4 py-2 rounded hover:bg-green-700"
             >
-              创建管理员
+              {t('createAdmin')}
             </button>
           </div>
 
@@ -244,10 +244,10 @@ function Settings() {
             <thead className="bg-gray-100">
               <tr>
                 <th className="p-3 text-left">{t('username')}</th>
-                <th className="p-3 text-left">角色</th>
-                <th className="p-3 text-left">状态</th>
-                <th className="p-3 text-left">类型</th>
-                <th className="p-3 text-left">操作</th>
+                <th className="p-3 text-left">{t('role')}</th>
+                <th className="p-3 text-left">{t('status')}</th>
+                <th className="p-3 text-left">{t('userType')}</th>
+                <th className="p-3 text-left">{t('action')}</th>
               </tr>
             </thead>
             <tbody>
@@ -261,11 +261,11 @@ function Settings() {
                   </td>
                   <td className="p-3">
                     <span className={`px-2 py-1 rounded text-sm ${user.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                      {user.isActive ? '启用' : '停用'}
+                      {user.isActive ? t('enabled') : t('disabled')}
                     </span>
                   </td>
                   <td className="p-3">
-                    {user.isInitial && <span className="text-orange-600 text-sm">初始管理员</span>}
+                    {user.isInitial && <span className="text-orange-600 text-sm">{t('initialAdmin')}</span>}
                   </td>
                   <td className="p-3">
                     {!user.isInitial && (
@@ -274,13 +274,13 @@ function Settings() {
                           onClick={() => handleToggleStatus(user)}
                           className="text-blue-600 hover:text-blue-800 mr-3"
                         >
-                          {user.isActive ? '停用' : '启用'}
+                          {user.isActive ? t('disabled') : t('enabled')}
                         </button>
                         <button
                           onClick={() => handleDeleteUser(user)}
                           className="text-red-600 hover:text-red-800"
                         >
-                          删除
+                          {t('delete')}
                         </button>
                       </>
                     )}
@@ -296,7 +296,7 @@ function Settings() {
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-md">
-            <h2 className="text-xl font-bold mb-4">创建管理员</h2>
+            <h2 className="text-xl font-bold mb-4">{t('createAdmin')}</h2>
 
             {error && (
               <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
@@ -333,18 +333,18 @@ function Settings() {
 
               <div className="mb-6">
                 <label className="block text-gray-700 text-sm font-bold mb-2">
-                  角色
+                  {t('role')}
                 </label>
                 <select
                   value={newUser.role}
                   onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
                   className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700"
                 >
-                  <option value={ROLES.ADMIN}>系统管理员</option>
-                  <option value={ROLES.COACH}>教练/统计员</option>
+                  <option value={ROLES.ADMIN}>{t('systemAdmin')}</option>
+                  <option value={ROLES.COACH}>{t('coachOrStat')}</option>
                 </select>
                 <p className="text-sm text-gray-500 mt-1">
-                  创建新管理员后，初始 admin 账户将自动停用
+                  {t('newAdminInfo')}
                 </p>
               </div>
 
@@ -361,7 +361,7 @@ function Settings() {
                   disabled={loading}
                   className="bg-green-800 text-white px-4 py-2 rounded hover:bg-green-700 disabled:opacity-50"
                 >
-                  {loading ? '创建中...' : t('save')}
+                  {loading ? t('creating') : t('save')}
                 </button>
               </div>
             </form>
