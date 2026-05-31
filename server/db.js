@@ -71,6 +71,7 @@ async function getDb() {
       awayLineup TEXT,
       homePitcherId INTEGER,
       awayPitcherId INTEGER,
+      confirmed INTEGER DEFAULT 0,
       createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (homeTeamId) REFERENCES teams(id),
       FOREIGN KEY (awayTeamId) REFERENCES teams(id)
@@ -137,6 +138,22 @@ async function getDb() {
       ageGroup TEXT,
       createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (teamId) REFERENCES teams(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS substitutions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      gameId INTEGER NOT NULL,
+      atBatId INTEGER,
+      type TEXT NOT NULL,
+      originalPlayerId INTEGER NOT NULL,
+      substitutePlayerId INTEGER NOT NULL,
+      base INTEGER,
+      reason TEXT,
+      createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (gameId) REFERENCES games(id),
+      FOREIGN KEY (atBatId) REFERENCES plate_appearances(id),
+      FOREIGN KEY (originalPlayerId) REFERENCES players(id),
+      FOREIGN KEY (substitutePlayerId) REFERENCES players(id)
     );
   `)
 

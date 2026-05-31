@@ -91,4 +91,42 @@ router.post('/:id/batter', async (req, res) => {
   }
 })
 
+// 添加换人记录（代跑/代打）
+router.post('/:id/substitutions', async (req, res) => {
+  try {
+    const { type, originalPlayerId, substitutePlayerId, base, reason, atBatId } = req.body
+    if (!type || !originalPlayerId || !substitutePlayerId) {
+      return res.status(400).json({ error: 'type, originalPlayerId, substitutePlayerId 必填' })
+    }
+    if (!['PINCH_RUN', 'PINCH_HIT'].includes(type)) {
+      return res.status(400).json({ error: 'type 必须是 PINCH_RUN 或 PINCH_HIT' })
+    }
+    const result = await gameService.addSubstitution(req.params.id, { type, originalPlayerId, substitutePlayerId, base, reason, atBatId })
+    res.json(result)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// 获取换人记录
+router.get('/:id/substitutions', async (req, res) => {
+  try {
+    const { type } = req.query
+    const substitutions = await gameService.getSubstitutions(req.params.id, type)
+    res.json(substitutions)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// 确认阵容
+router.post('/:id/lineup/confirm', async (req, res) => {
+  try {
+    const result = await gameService.confirmLineup(req.params.id)
+    res.json(result)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
 export default router
