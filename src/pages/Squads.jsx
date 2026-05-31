@@ -218,7 +218,7 @@ function Squads() {
                         >
                           <div className="font-medium">{squad.name}</div>
                           <div className="text-sm text-gray-500">
-                            {SQUAD_LEVEL_LABELS[squad.level] || squad.level}级
+                            {SQUAD_LEVEL_LABELS[squad.level] || squad.level}{t('level')}
                             {squad.ageGroup && ` · ${squad.ageGroup}`}
                           </div>
                         </div>
@@ -269,7 +269,7 @@ function Squads() {
                     <thead className="bg-gray-50">
                       <tr>
                         <th className="p-2 text-left">{t('number')}</th>
-                        <th className="p-2 text-left">{t('name') || '姓名'}</th>
+                        <th className="p-2 text-left">{t('name')}</th>
                         <th className="p-2 text-left">{t('position')}</th>
                         <th className="p-2 text-left">{t('throwsBats')}</th>
                         {canWrite('squads') && <th className="p-2 text-left">{t('action')}</th>}
