@@ -92,8 +92,7 @@ app.use('/api/teams', teamRoutes)
 app.use('/api/players', playerRoutes)
 app.use('/api/v1', v1Routes)
 app.use('/api/games', (req, res) => {
-  const newPath = '/api/v1' + req.path
-  res.redirect(307, newPath)
+  res.redirect(307, '/api/v1/games' + req.path)
 })
 app.use('/api/stats', statsRoutes)
 app.use('/api/squads', squadRoutes)
