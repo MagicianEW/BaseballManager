@@ -71,7 +71,7 @@ export function Scoreboard({ game, currentBatterIndex, currentBatterName }) {
       {/* 垒上局面 */}
       <div className="p-4 border-b">
         <h3 className="text-center text-sm font-semibold text-gray-600 mb-2">场上局面</h3>
-        <GameField baseSituation={game.baseSituation || '---'} />
+        <GameField baseSituation={game.baseSituation || 0} />
       </div>
 
       {/* 当前打者 */}

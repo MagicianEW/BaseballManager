@@ -4,58 +4,60 @@ import { getDb, saveDb } from '../db.js'
  * 比赛服务层
  */
 
-// 更新垒上局面
-function updateBaseSituation(current, hitResult) {
-  const bases = current.split('')
-  let newBases = ['-', '-', '-']
+// 垒上局面位掩码定义
+// bit 0 (1) = 一垒有人
+// bit 1 (2) = 二垒有人
+// bit 2 (4) = 三垒有人
+// 可以通过 OR 组合：0=无人, 1=一垒, 2=二垒, 4=三垒, 3=一二垒, 5=一三垒, 6=二三垒, 7=满垒
+const FIRST_BASE = 1
+const SECOND_BASE = 2
+const THIRD_BASE = 4
 
-  for (let i = 0; i < 3; i++) {
-    if (i < bases.length && bases[i] !== '-') {
-      newBases[i] = bases[i]
-    }
-  }
+// 更新垒上局面（位掩码版本）
+function updateBaseSituation(currentBitmask, hitResult) {
+  let bases = currentBitmask || 0
 
   if (hitResult === '1B') {
-    if (newBases[0] !== '-') {
-      if (newBases[1] !== '-') newBases[2] = newBases[1]
-      newBases[1] = newBases[0]
+    // 一垒安打：所有跑垒员前进一个垒位
+    bases = ((bases & FIRST_BASE) ? (bases | SECOND_BASE) : bases) & ~FIRST_BASE
+    // 如果一垒有人，一垒跑垒员到二垒，二垒到三垒
+    if (currentBitmask & FIRST_BASE) {
+      bases = bases | SECOND_BASE
+      if (currentBitmask & SECOND_BASE) {
+        bases = bases | THIRD_BASE
+      }
     }
-    newBases[0] = '1'
+    bases = (bases & ~FIRST_BASE) | FIRST_BASE
   } else if (hitResult === '2B') {
-    if (newBases[0] !== '-') newBases[2] = newBases[0]
-    newBases[0] = '-'
-    newBases[1] = '2'
+    // 二垒安打：一垒到三垒，二垒安打者占二垒
+    if (bases & FIRST_BASE) bases = bases | THIRD_BASE
+    bases = (bases & ~FIRST_BASE & ~SECOND_BASE) | SECOND_BASE
   } else if (hitResult === '3B') {
-    newBases[0] = '-'
-    newBases[2] = '3'
+    // 三垒安打：三垒安打者占三垒
+    bases = (bases & ~FIRST_BASE & ~SECOND_BASE) | THIRD_BASE
   } else if (hitResult === 'HR') {
-    newBases = ['-', '-', '-']
+    // 本垒打：清空所有垒位
+    bases = 0
   }
 
-  return newBases.join('')
+  return bases
 }
 
-function advanceOnWalk(current) {
-  const bases = current.split('')
-  let newBases = ['-', '-', '-']
+// 保送时推进垒位（位掩码版本）
+function advanceOnWalk(currentBitmask) {
+  let bases = currentBitmask || 0
 
-  for (let i = 0; i < 3; i++) {
-    if (i < bases.length && bases[i] !== '-') {
-      newBases[i] = bases[i]
+  // 如果一垒有人，一垒跑垒员前进到二垒（如果二垒也有，则到三垒）
+  if (bases & FIRST_BASE) {
+    if (bases & SECOND_BASE) {
+      bases = bases | THIRD_BASE
     }
+    bases = (bases & ~SECOND_BASE) | SECOND_BASE
   }
+  // 保送送打者上一垒
+  bases = bases | FIRST_BASE
 
-  if (newBases[0] !== '-') {
-    if (newBases[1] !== '-') {
-      if (newBases[2] !== '-') newBases[2] = newBases[1]
-      newBases[1] = newBases[0]
-    }
-    newBases[0] = '1'
-  } else {
-    newBases[0] = '1'
-  }
-
-  return newBases.join('')
+  return bases
 }
 
 export const gameService = {
@@ -192,7 +194,7 @@ export const gameService = {
 
     const game = gameResult[0].values[0]
     let outs = game[9] || 0
-    let baseSituation = game[12] || '---'
+    let baseSituation = game[12] || 0
     let homeScore = game[4] || 0
     let awayScore = game[5] || 0
 
@@ -200,7 +202,7 @@ export const gameService = {
       outs++
       if (outs >= 3) {
         outs = 0
-        baseSituation = '---'
+        baseSituation = 0
       }
     } else if (['1B', '2B', '3B', 'HR'].includes(result)) {
       baseSituation = updateBaseSituation(baseSituation, result)

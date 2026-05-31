@@ -3,13 +3,60 @@ import { useParams, Link } from 'react-router-dom'
 import { api } from '../utils/api'
 import { PLAY_RESULTS, RESULT_LABELS, RESULT_CATEGORIES } from '../constants/baseball'
 
-// 使用 constants 中定义的出局类型
+// 垒上局面位掩码定义
+// bit 0 (1) = 一垒有人, bit 1 (2) = 二垒有人, bit 2 (4) = 三垒有人
+// 组合值：0=无人, 1=一垒, 2=二垒, 3=一二垒, 4=三垒, 5=一三垒, 6=二三垒, 7=满垒
+const BASE_FIRST = 1
+const BASE_SECOND = 2
+const BASE_THIRD = 4
+
 const OUT_RESULTS = RESULT_CATEGORIES.outs.items
 
 // 生成打席结果选项（从 RESULT_LABELS）
 const HIT_RESULTS = Object.entries(RESULT_LABELS)
   .filter(([key]) => !['SB', 'CS', 'PK', 'WP', 'BALK', 'PB', 'E', 'IBB'].includes(key))
   .map(([value, label]) => ({ value, label }))
+
+// 将位掩码转换为显示字符串
+const baseMaskToString = (bitmask) => {
+  if (!bitmask) return '---'
+  const parts = []
+  if (bitmask & BASE_FIRST) parts.push('1')
+  if (bitmask & BASE_SECOND) parts.push('2')
+  if (bitmask & BASE_THIRD) parts.push('3')
+  return parts.length === 0 ? '---' : parts.join('') + 'B'
+}
+
+// 位掩码版本：推进垒位
+const advanceBaseBitmask = (bitmask, result) => {
+  let bases = bitmask || 0
+
+  if (result === '1B') {
+    // 一垒安打：所有跑垒员前进
+    if (bases & BASE_FIRST) bases |= BASE_SECOND
+    if (bases & BASE_SECOND) bases |= BASE_THIRD
+    if (bases & BASE_FIRST) bases = (bases & ~BASE_SECOND) | BASE_SECOND
+    bases = (bases & ~BASE_FIRST) | BASE_FIRST
+  } else if (result === '2B') {
+    // 二垒安打：一垒到三垒
+    if (bases & BASE_FIRST) bases |= BASE_THIRD
+    bases = (bases & ~BASE_FIRST & ~BASE_SECOND) | BASE_SECOND
+  } else if (result === '3B') {
+    // 三垒安打
+    bases = (bases & ~BASE_FIRST & ~BASE_SECOND) | BASE_THIRD
+  } else if (result === 'HR') {
+    // 本垒打清空
+    bases = 0
+  } else if (result === 'walk') {
+    // 保送：一垒有人推进
+    if (bases & BASE_FIRST) {
+      if (bases & BASE_SECOND) bases |= BASE_THIRD
+      bases = (bases & ~BASE_SECOND) | BASE_SECOND
+    }
+    bases |= BASE_FIRST
+  }
+  return bases
+}
 
 function GameLive() {
   const { id } = useParams()
@@ -73,16 +120,16 @@ function GameLive() {
         if (newOuts >= 3) {
           // 半局结束
           newOuts = 0
-          newBaseSituation = '---'
+          newBaseSituation = 0
         }
       } else if (['1B', '2B', '3B', 'HR'].includes(result)) {
-        newBaseSituation = advanceBase(newBaseSituation, result)
+        newBaseSituation = advanceBaseBitmask(newBaseSituation, result)
         if (result === 'HR') {
           if (half === 'top') newAwayScore++
           else newHomeScore++
         }
       } else if (['BB', 'HBP'].includes(result)) {
-        newBaseSituation = advanceBase(newBaseSituation, 'walk')
+        newBaseSituation = advanceBaseBitmask(newBaseSituation, 'walk')
       }
 
       await api.updateGame(game.id, {
@@ -101,44 +148,6 @@ function GameLive() {
     }
   }
 
-  const advanceBase = (situation, result) => {
-    const bases = situation.split('').map(c => c === '-' ? null : c)
-    let newBases = [null, null, null]
-
-    for (let i = 0; i < 3; i++) {
-      if (bases[i]) newBases[i] = bases[i]
-    }
-
-    if (result === '1B') {
-      if (newBases[0]) {
-        if (newBases[1]) newBases[2] = newBases[1]
-        newBases[1] = newBases[0]
-      }
-      newBases[0] = 'B'
-    } else if (result === '2B') {
-      if (newBases[0]) newBases[2] = newBases[0]
-      newBases[0] = null
-      newBases[1] = 'B'
-    } else if (result === '3B') {
-      newBases[0] = null
-      newBases[2] = 'B'
-    } else if (result === 'HR') {
-      newBases = [null, null, null]
-    } else if (result === 'walk') {
-      if (newBases[0]) {
-        if (newBases[1]) {
-          if (newBases[2]) newBases[2] = newBases[1]
-          newBases[1] = newBases[0]
-        }
-        newBases[0] = 'B'
-      } else {
-        newBases[0] = 'B'
-      }
-    }
-
-    return newBases.map(b => b || '-').join('')
-  }
-
   const nextInning = async () => {
     const newHalf = game.currentHalf === 'top' ? 'bottom' : 'top'
     const newInning = newHalf === 'top' ? game.currentInning + 1 : game.currentInning
@@ -147,7 +156,7 @@ function GameLive() {
       currentHalf: newHalf,
       currentInning: newInning,
       outs: 0,
-      baseSituation: '---',
+      baseSituation: 0,
       balls: 0,
       strikes: 0
     })
@@ -202,14 +211,14 @@ function GameLive() {
         <div className="flex justify-center">
           <svg width="200" height="200" viewBox="0 0 200 200">
             {/* 垒包 */}
-            <polygon points="100,30 115,45 100,60 85,45" fill={game.baseSituation[0] !== '-' ? '#f00' : '#fff'} stroke="#000" strokeWidth="2"/>
-            <polygon points="170,100 155,115 140,100 155,85" fill={game.baseSituation[1] !== '-' ? '#f00' : '#fff'} stroke="#000" strokeWidth="2"/>
-            <polygon points="100,170 85,155 70,170 85,185" fill={game.baseSituation[2] !== '-' ? '#f00' : '#fff'} stroke="#000" strokeWidth="2"/>
+            <polygon points="100,30 115,45 100,60 85,45" fill={(game.baseSituation & BASE_FIRST) ? '#f00' : '#fff'} stroke="#000" strokeWidth="2"/>
+            <polygon points="170,100 155,115 140,100 155,85" fill={(game.baseSituation & BASE_SECOND) ? '#f00' : '#fff'} stroke="#000" strokeWidth="2"/>
+            <polygon points="100,170 85,155 70,170 85,185" fill={(game.baseSituation & BASE_THIRD) ? '#f00' : '#fff'} stroke="#000" strokeWidth="2"/>
             {/* 本垒 */}
             <rect x="85" y="155" width="30" height="30" fill="#fff" stroke="#000" strokeWidth="2" transform="rotate(45 100 170)"/>
           </svg>
         </div>
-        <div className="text-center mt-2 font-mono">{game.baseSituation}</div>
+        <div className="text-center mt-2 font-mono">{baseMaskToString(game.baseSituation)}</div>
       </div>
 
       {/* 当前打者 */}

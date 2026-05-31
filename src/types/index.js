@@ -42,7 +42,7 @@
  * @property {number} outs
  * @property {number} balls
  * @property {number} strikes
- * @property {string} baseSituation
+ * @property {number} baseSituation - 位掩码：0=无人, 1=一垒, 2=二垒, 4=三垒, 3=一二垒, 5=一三垒, 6=二三垒, 7=满垒
  * @property {number[]} homeLineup
  * @property {number[]} awayLineup
  * @property {number} [homePitcherId]

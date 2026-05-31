@@ -100,16 +100,23 @@ export const THROW_OPTIONS = [
   { value: 'L', label: '左手' },
 ]
 
-// 局面状态
+// 局面状态位掩码定义
+// bit 0 (1) = 一垒有人, bit 1 (2) = 二垒有人, bit 2 (4) = 三垒有人
+// 可以通过 OR 组合：0=无人, 1=一垒, 2=二垒, 4=三垒, 3=一二垒, 5=一三垒, 6=二三垒, 7=满垒
+export const BASE_FIRST = 1
+export const BASE_SECOND = 2
+export const BASE_THIRD = 4
+
+// 局面状态（用于显示转换）
 export const BASE_SITUATIONS = [
-  { code: '---', label: '无人' },
-  { code: '1B-', label: '一垒有人' },
-  { code: '-2B', label: '二垒有人' },
-  { code: '12B', label: '一二垒有人' },
-  { code: '--3', label: '三垒有人' },
-  { code: '1-3', label: '一三垒有人' },
-  { code: '-23', label: '二三垒有人' },
-  { code: '123', label: '满垒' },
+  { bitmask: 0, code: '---', label: '无人' },
+  { bitmask: BASE_FIRST, code: '1B-', label: '一垒有人' },
+  { bitmask: BASE_SECOND, code: '-2B', label: '二垒有人' },
+  { bitmask: BASE_FIRST | BASE_SECOND, code: '12B', label: '一二垒有人' },
+  { bitmask: BASE_THIRD, code: '--3', label: '三垒有人' },
+  { bitmask: BASE_FIRST | BASE_THIRD, code: '1-3', label: '一三垒有人' },
+  { bitmask: BASE_SECOND | BASE_THIRD, code: '-23', label: '二三垒有人' },
+  { bitmask: BASE_FIRST | BASE_SECOND | BASE_THIRD, code: '123', label: '满垒' },
 ]
 
 // 比赛状态
