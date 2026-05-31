@@ -228,7 +228,7 @@ export const gameService = {
     return { success: true, pitcherId }
   },
 
-  async changeBatter(gameId, team, batterId, lineupIndex) {
+    async changeBatter(gameId, team, batterId, lineupIndex) {
     const db = await getDb()
     const field = team === 'home' ? 'homeLineup' : 'awayLineup'
     const gameResult = db.exec(`SELECT ${field} FROM games WHERE id = ${gameId}`)
@@ -241,5 +241,62 @@ export const gameService = {
     }
 
     return { success: true, batterId }
+  },
+
+  // 添加换人记录（代跑/代打）
+  async addSubstitution(gameId, data) {
+    const db = await getDb()
+    db.run(`
+      INSERT INTO substitutions (gameId, atBatId, type, originalPlayerId, substitutePlayerId, base, reason)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, [
+      gameId,
+      data.atBatId || null,
+      data.type,
+      data.originalPlayerId,
+      data.substitutePlayerId,
+      data.base || null,
+      data.reason || null
+    ])
+    const result = db.exec('SELECT last_insert_rowid()')
+    saveDb()
+    return { id: result[0].values[0][0], gameId, ...data }
+  },
+
+  // 获取比赛的所有换人记录
+  async getSubstitutions(gameId, type) {
+    const db = await getDb()
+    let query = `
+      SELECT s.*, 
+        op.name as originalPlayerName, 
+        sp.name as substitutePlayerName,
+        pa.inning, pa.half
+      FROM substitutions s
+      LEFT JOIN players op ON s.originalPlayerId = op.id
+      LEFT JOIN players sp ON s.substitutePlayerId = sp.id
+      LEFT JOIN plate_appearances pa ON s.atBatId = pa.id
+      WHERE s.gameId = ${gameId}
+    `
+    if (type) {
+      query += ` AND s.type = '${type}'`
+    }
+    query += ' ORDER BY s.createdAt'
+
+    const result = db.exec(query)
+    return result[0]?.values.map(row => ({
+      id: row[0], gameId: row[1], atBatId: row[2], type: row[3],
+      originalPlayerId: row[4], substitutePlayerId: row[5],
+      base: row[6], reason: row[7], createdAt: row[8],
+      originalPlayerName: row[9], substitutePlayerName: row[10],
+      inning: row[11], half: row[12]
+    })) || []
+  },
+
+  // 确认阵容（教练确认）
+  async confirmLineup(gameId, team) {
+    const db = await getDb()
+    db.run(`UPDATE games SET confirmed = 1 WHERE id = ?`, [gameId])
+    saveDb()
+    return { success: true, confirmed: true }
   }
 }
