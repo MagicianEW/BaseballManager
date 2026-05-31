@@ -3,6 +3,8 @@ import cors from 'cors'
 import multer from 'multer'
 import path from 'path'
 import fs from 'fs'
+import { createServer } from 'http'
+import { Server } from 'socket.io'
 import { fileURLToPath } from 'url'
 
 import teamRoutes from './routes/teams.js'
@@ -19,6 +21,16 @@ const uploadDir = path.join(__dirname, 'public', 'uploads')
 fs.mkdirSync(uploadDir, { recursive: true })
 
 const app = express()
+const httpServer = createServer(app)
+const io = new Server(httpServer, { cors: { origin: '*' } })
+
+// 将 io 挂载到 app 上，供各路由访问
+app.set('io', io)
+
+// Socket.IO 连接日志
+io.on('connection', (socket) => {
+  console.log('Client connected:', socket.id)
+})
 
 // Middleware
 app.use(cors())
@@ -93,6 +105,6 @@ app.use((err, req, res, next) => {
 })
 
 const PORT = process.env.PORT || 3001
-app.listen(PORT, () => {
+httpServer.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`)
 })

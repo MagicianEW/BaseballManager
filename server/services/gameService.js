@@ -64,7 +64,7 @@ export const gameService = {
       currentInning: row[7], currentHalf: row[8], outs: row[9],
       balls: row[10], strikes: row[11], baseSituation: row[12],
       homeLineup: row[13], awayLineup: row[14], homePitcherId: row[15], awayPitcherId: row[16],
-      homeTeamName: row[17], awayTeamName: row[18]
+      homeTeamName: row[17], awayTeamName: row[18], confirmed: !!row[19]
     })) || []
   },
 
@@ -111,8 +111,8 @@ export const gameService = {
   async create(data) {
     const db = await getDb()
     db.run(`
-      INSERT INTO games (date, homeTeamId, awayTeamId, homeLineup, awayLineup, homePitcherId, awayPitcherId)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO games (date, homeTeamId, awayTeamId, homeLineup, awayLineup, homePitcherId, awayPitcherId, confirmed)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 0)
     `, [
       data.date || null,
       data.homeTeamId || null,

@@ -223,7 +223,6 @@ function Players() {
                 <td className="p-2">{getSquadName(player.squadId)}</td>
                 <td className="p-2">{player.throws}/{player.bats}</td>
                 <td className="p-2">{getPositionDisplay(player.positions)}</td>
-                </td>
                 {canWrite('players') && (
                   <td className="p-2">
                     <button onClick={() => startEdit(player)} className="text-blue-600 mr-2">{t('edit')}</button>

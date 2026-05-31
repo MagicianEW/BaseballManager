@@ -35,6 +35,8 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: '比赛日期必填' })
     }
     const game = await gameService.create(req.body)
+    const io = req.app.get('io')
+    if (io) io.emit('games:created', { gameId: game.id })
     res.json(game)
   } catch (error) {
     res.status(500).json({ error: error.message })
@@ -45,6 +47,8 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const game = await gameService.update(req.params.id, req.body)
+    const io = req.app.get('io')
+    if (io) io.emit('games:updated', { gameId: req.params.id })
     res.json(game)
   } catch (error) {
     res.status(500).json({ error: error.message })
@@ -55,6 +59,8 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     await gameService.delete(req.params.id)
+    const io = req.app.get('io')
+    if (io) io.emit('games:deleted', { gameId: req.params.id })
     res.json({ success: true })
   } catch (error) {
     res.status(500).json({ error: error.message })
@@ -65,6 +71,8 @@ router.delete('/:id', async (req, res) => {
 router.post('/:id/pa', async (req, res) => {
   try {
     const pa = await gameService.addPlateAppearance(req.params.id, req.body)
+    const io = req.app.get('io')
+    if (io) io.emit('games:updated', { gameId: req.params.id })
     res.json(pa)
   } catch (error) {
     res.status(500).json({ error: error.message })
@@ -75,6 +83,8 @@ router.post('/:id/pa', async (req, res) => {
 router.post('/:id/pitcher', async (req, res) => {
   try {
     const result = await gameService.changePitcher(req.params.id, req.body.team, req.body.pitcherId)
+    const io = req.app.get('io')
+    if (io) io.emit('games:updated', { gameId: req.params.id })
     res.json(result)
   } catch (error) {
     res.status(500).json({ error: error.message })
@@ -85,6 +95,8 @@ router.post('/:id/pitcher', async (req, res) => {
 router.post('/:id/batter', async (req, res) => {
   try {
     const result = await gameService.changeBatter(req.params.id, req.body.team, req.body.batterId, req.body.lineupIndex)
+    const io = req.app.get('io')
+    if (io) io.emit('games:updated', { gameId: req.params.id })
     res.json(result)
   } catch (error) {
     res.status(500).json({ error: error.message })
@@ -102,6 +114,8 @@ router.post('/:id/substitutions', async (req, res) => {
       return res.status(400).json({ error: 'type 必须是 PINCH_RUN 或 PINCH_HIT' })
     }
     const result = await gameService.addSubstitution(req.params.id, { type, originalPlayerId, substitutePlayerId, base, reason, atBatId })
+    const io = req.app.get('io')
+    if (io) io.emit('games:updated', { gameId: req.params.id })
     res.json(result)
   } catch (error) {
     res.status(500).json({ error: error.message })
@@ -123,6 +137,8 @@ router.get('/:id/substitutions', async (req, res) => {
 router.post('/:id/lineup/confirm', async (req, res) => {
   try {
     const result = await gameService.confirmLineup(req.params.id)
+    const io = req.app.get('io')
+    if (io) io.emit('games:updated', { gameId: req.params.id })
     res.json(result)
   } catch (error) {
     res.status(500).json({ error: error.message })
