@@ -12,6 +12,9 @@ const BASE_THIRD = 4
 
 const OUT_RESULTS = RESULT_CATEGORIES.outs.items
 
+// 快速模式按钮（只显示常用6个）
+const QUICK_RESULTS = ['HR', 'SO', 'BB', 'GO', 'FO', '1B']
+
 // 生成打席结果选项（从 RESULT_LABELS）
 const HIT_RESULTS = Object.entries(RESULT_LABELS)
   .filter(([key]) => !['SB', 'CS', 'PK', 'WP', 'BALK', 'PB', 'E', 'IBB'].includes(key))
@@ -63,6 +66,9 @@ function GameLive() {
   const [game, setGame] = useState(null)
   const [players, setPlayers] = useState([])
   const [currentBatter, setCurrentBatter] = useState(null)
+  const [quickMode, setQuickMode] = useState(() => {
+    return localStorage.getItem('quickMode') !== 'false' // 默认 true
+  })
 
   useEffect(() => {
     loadGame()
@@ -148,6 +154,12 @@ function GameLive() {
     }
   }
 
+  const toggleQuickMode = () => {
+    const newMode = !quickMode
+    setQuickMode(newMode)
+    localStorage.setItem('quickMode', String(newMode))
+  }
+
   const nextInning = async () => {
     const newHalf = game.currentHalf === 'top' ? 'bottom' : 'top'
     const newInning = newHalf === 'top' ? game.currentInning + 1 : game.currentInning
@@ -229,11 +241,19 @@ function GameLive() {
 
       {/* 记录按钮 */}
       <div className="bg-white rounded shadow p-4 mb-4">
-        <h2 className="text-lg font-bold mb-4">记录打席结果</h2>
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-lg font-bold">记录打席结果</h2>
+          <button 
+            onClick={toggleQuickMode}
+            className={`px-3 py-1 rounded text-sm ${quickMode ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
+          >
+            {quickMode ? '快速模式' : '完整模式'}
+          </button>
+        </div>
         <div className="grid grid-cols-4 md:grid-cols-6 gap-2">
-          {HIT_RESULTS.map(r => (
+          {(quickMode ? HIT_RESULTS.filter(r => QUICK_RESULTS.includes(r.value)) : HIT_RESULTS).map(r => (
             <button key={r.value} onClick={() => handleRecord(r.value)}
-              className="bg-green-800 text-white p-3 rounded hover:bg-green-700">
+              className={quickMode ? 'bg-green-800 text-white p-4 rounded hover:bg-green-700 text-lg font-bold' : 'bg-green-800 text-white p-3 rounded hover:bg-green-700'}>
               {r.label}
             </button>
           ))}

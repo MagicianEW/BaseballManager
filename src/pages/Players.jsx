@@ -117,6 +117,26 @@ function Players() {
 
   const filteredSquads = squads.filter(s => !form.teamId || s.teamId === parseInt(form.teamId))
 
+  const getPositionLabel = (code) => {
+    const pos = POSITIONS.find(p => p.code === code)
+    return pos ? `${pos.code} (${pos.name})` : code
+  }
+
+  const getPositionDisplay = (positions) => {
+    if (!positions) return '-'
+    let posArray = []
+    if (Array.isArray(positions)) {
+      posArray = positions
+    } else {
+      try {
+        posArray = JSON.parse(positions)
+      } catch {
+        return '-'
+      }
+    }
+    return posArray.map(getPositionLabel).join(', ')
+  }
+
   return (
     <div>
       <h1 className="text-2xl font-bold mb-4">{t('playerManagement')}</h1>
@@ -162,7 +182,7 @@ function Players() {
                 <button key={pos.code} type="button"
                   onClick={() => togglePosition(pos.code)}
                   className={`px-3 py-1 rounded ${form.positions.includes(pos.code) ? 'bg-green-800 text-white' : 'bg-gray-200'}`}>
-                  {pos.code}
+                  {pos.code} ({pos.name})
                 </button>
               ))}
             </div>
@@ -202,8 +222,7 @@ function Players() {
                 <td className="p-2">{getTeamName(player.teamId)}</td>
                 <td className="p-2">{getSquadName(player.squadId)}</td>
                 <td className="p-2">{player.throws}/{player.bats}</td>
-                <td className="p-2">
-                  {player.positions ? (Array.isArray(player.positions) ? player.positions.join(', ') : (() => { try { return JSON.parse(player.positions).join(', ') } catch { return '-' } })()) : '-'}
+                <td className="p-2">{getPositionDisplay(player.positions)}</td>
                 </td>
                 {canWrite('players') && (
                   <td className="p-2">

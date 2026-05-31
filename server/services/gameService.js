@@ -18,29 +18,31 @@ function updateBaseSituation(currentBitmask, hitResult) {
   let bases = currentBitmask || 0
 
   if (hitResult === '1B') {
-    // 一垒安打：所有跑垒员前进一个垒位
-    bases = ((bases & FIRST_BASE) ? (bases | SECOND_BASE) : bases) & ~FIRST_BASE
-    // 如果一垒有人，一垒跑垒员到二垒，二垒到三垒
-    if (currentBitmask & FIRST_BASE) {
-      bases = bases | SECOND_BASE
-      if (currentBitmask & SECOND_BASE) {
-        bases = bases | THIRD_BASE
-      }
-    }
-    bases = (bases & ~FIRST_BASE) | FIRST_BASE
+    // 打者上一垒，所有跑垒员各进一垒，三垒直接回家（得分）
+    // 从原始状态推导，避免顺序依赖bug
+    let newBases = 0
+    if (currentBitmask & THIRD_BASE) {} // 三垒得分，清空
+    if (currentBitmask & SECOND_BASE) newBases |= THIRD_BASE // 二垒→三垒
+    if (currentBitmask & FIRST_BASE) newBases |= SECOND_BASE // 一垒→二垒
+    newBases |= FIRST_BASE // 打者→一垒
+    return newBases
   } else if (hitResult === '2B') {
-    // 二垒安打：一垒到三垒，二垒安打者占二垒
-    if (bases & FIRST_BASE) bases = bases | THIRD_BASE
-    bases = (bases & ~FIRST_BASE & ~SECOND_BASE) | SECOND_BASE
+    // 打者上二垒，一垒→三垒，三垒得分
+    let newBases = 0
+    if (currentBitmask & THIRD_BASE) {} // 三垒得分
+    if (currentBitmask & FIRST_BASE) newBases |= THIRD_BASE // 一垒→三垒
+    newBases |= SECOND_BASE // 打者→二垒
+    return newBases
   } else if (hitResult === '3B') {
-    // 三垒安打：三垒安打者占三垒
-    bases = (bases & ~FIRST_BASE & ~SECOND_BASE) | THIRD_BASE
+    // 打者上三垒，一垒→三垒
+    let newBases = 0
+    if (currentBitmask & SECOND_BASE) newBases |= THIRD_BASE // 二垒→三垒
+    if (currentBitmask & FIRST_BASE) newBases |= THIRD_BASE  // 一垒→三垒
+    newBases |= THIRD_BASE // 打者→三垒
+    return newBases
   } else if (hitResult === 'HR') {
-    // 本垒打：清空所有垒位
-    bases = 0
+    return 0
   }
-
-  return bases
 }
 
 // 保送时推进垒位（位掩码版本）
@@ -50,9 +52,11 @@ function advanceOnWalk(currentBitmask) {
   // 如果一垒有人，一垒跑垒员前进到二垒（如果二垒也有，则到三垒）
   if (bases & FIRST_BASE) {
     if (bases & SECOND_BASE) {
-      bases = bases | THIRD_BASE
+      // 二垒的到三垒（清除二垒，设置三垒）
+      bases = (bases & ~SECOND_BASE) | THIRD_BASE
     }
-    bases = (bases & ~SECOND_BASE) | SECOND_BASE
+    // 一垒的到二垒（清除一垒，设置二垒）
+    bases = (bases & ~FIRST_BASE) | SECOND_BASE
   }
   // 保送送打者上一垒
   bases = bases | FIRST_BASE
@@ -98,7 +102,7 @@ export const gameService = {
       currentInning: row[7], currentHalf: row[8], outs: row[9],
       balls: row[10], strikes: row[11], baseSituation: row[12],
       homeLineup: row[13], awayLineup: row[14], homePitcherId: row[15], awayPitcherId: row[16],
-      homeTeamName: row[17], awayTeamName: row[18], plateAppearances: []
+      homeTeamName: row[17], awayTeamName: row[18], confirmed: !!row[19], plateAppearances: []
     }
 
     const paResult = db.exec(`
