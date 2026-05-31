@@ -180,6 +180,10 @@ export const gamesAPI = {
       method: 'POST',
       body: JSON.stringify({ team, batterId, lineupIndex }),
     }),
+
+  // 确认阵容
+  confirmLineup: (gameId) =>
+    fetchAPI(`/games/${gameId}/lineup/confirm`, { method: 'POST' }),
 }
 
 /**
