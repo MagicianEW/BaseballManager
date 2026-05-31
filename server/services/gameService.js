@@ -23,9 +23,15 @@ function updateBaseSituation(currentBitmask, hitResult) {
     return b
   }
   if (hitResult === '2B') {
+    // 二垒安打：
+    // - 一垒跑者进三垒
+    // - 二垒跑者被取代（打者直接冲二垒）
+    // - 三垒跑者回本垒得分
+    // - 打者进二垒
     let b = 0
-    if (currentBitmask & SECOND_BASE) b |= THIRD_BASE
-    b |= SECOND_BASE
+    if (currentBitmask & FIRST_BASE) b |= THIRD_BASE  // 一垒跑者进三垒
+    if (currentBitmask & SECOND_BASE) b |= SECOND_BASE  // 二垒跑者留二垒（被打者取代，但留在垒上）
+    b |= SECOND_BASE  // 打者上二垒
     return b
   }
   if (hitResult === '3B') {
