@@ -66,7 +66,7 @@ async function getDb() {
       outs INTEGER DEFAULT 0,
       balls INTEGER DEFAULT 0,
       strikes INTEGER DEFAULT 0,
-      baseSituation TEXT DEFAULT '---',
+      baseSituation INTEGER DEFAULT 0,
       homeLineup TEXT,
       awayLineup TEXT,
       homePitcherId INTEGER,

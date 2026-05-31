@@ -1,4 +1,4 @@
-import { POSITIONS } from '../../constants/baseball'
+import { POSITIONS, BASE_FIRST, BASE_SECOND, BASE_THIRD } from '../../constants/baseball'
 
 /**
  * 垒位标签
@@ -28,15 +28,23 @@ export const BASE_BORDER_COLOR = '#2d3748'
 /**
  * 组件属性 PropTypes 注释
  * @param {Object} props
- * @param {string} props.baseSituation - 当前局面 (如 "12B", "---")
+ * @param {number} props.baseSituation - 当前局面位掩码 (0=无人, 1=一垒, 2=二垒, 4=三垒, 3=一二垒, 5=一三垒, 6=二三垒, 7=满垒)
  */
-export function GameField({ baseSituation = '---' }) {
-  // 解析局面: --- = 无人, 1B- = 一垒有人, -2B = 二垒有人, 12B = 一二垒有人
-  // --3 = 三垒有人, 1-3 = 一三垒有人, -23 = 二三垒有人, 123 = 满垒
-  const bases = baseSituation.split('').map(c => c !== '-' ? c : null)
-  const firstBase = bases[0] || null   // 一垒
-  const secondBase = bases[1] || null  // 二垒
-  const thirdBase = bases[2] || null   // 三垒
+export function GameField({ baseSituation = 0 }) {
+  // 位掩码解析: bit 0=一垒, bit 1=二垒, bit 2=三垒
+  const firstBase = (baseSituation & BASE_FIRST) ? '1' : null   // 一垒
+  const secondBase = (baseSituation & BASE_SECOND) ? '2' : null // 二垒
+  const thirdBase = (baseSituation & BASE_THIRD) ? '3' : null    // 三垒
+
+  // 转换为显示字符串
+  const displayStr = (() => {
+    if (!baseSituation) return '---'
+    const parts = []
+    if (baseSituation & BASE_FIRST) parts.push('1')
+    if (baseSituation & BASE_SECOND) parts.push('2')
+    if (baseSituation & BASE_THIRD) parts.push('3')
+    return parts.length === 0 ? '---' : parts.join('') + 'B'
+  })()
 
   return (
     <div className="flex justify-center items-center">
@@ -71,7 +79,7 @@ export function GameField({ baseSituation = '---' }) {
 
         {/* 局面文字显示 */}
         <text x="120" y="230" textAnchor="middle" fontSize="14" fill="#ffffff" fontFamily="monospace">
-          {baseSituation}
+          {displayStr}
         </text>
       </svg>
     </div>
