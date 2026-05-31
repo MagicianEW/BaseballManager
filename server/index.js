@@ -13,6 +13,7 @@ import gameRoutes from './routes/games.js'
 import statsRoutes from './routes/stats.js'
 import squadRoutes from './routes/squads.js'
 import authRoutes from './routes/auth.js'
+import v1Routes from './routes/v1/index.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const uploadDir = path.join(__dirname, 'public', 'uploads')
@@ -89,7 +90,11 @@ app.delete('/api/upload/:filename', (req, res) => {
 app.use('/api/auth', authRoutes)
 app.use('/api/teams', teamRoutes)
 app.use('/api/players', playerRoutes)
-app.use('/api/games', gameRoutes)
+app.use('/api/v1', v1Routes)
+app.use('/api/games', (req, res) => {
+  const newPath = '/api/v1' + req.path
+  res.redirect(307, newPath)
+})
 app.use('/api/stats', statsRoutes)
 app.use('/api/squads', squadRoutes)
 
