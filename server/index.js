@@ -1,11 +1,10 @@
 import express from 'express'
 import cors from 'cors'
 import multer from 'multer'
-import path from 'path'
 import fs from 'fs'
 import { createServer } from 'http'
+import { pathToFileURL } from 'url'
 import { Server } from 'socket.io'
-import { fileURLToPath } from 'url'
 
 import teamRoutes from './routes/teams.js'
 import playerRoutes from './routes/players.js'
@@ -13,102 +12,135 @@ import gameRoutes from './routes/games.js'
 import statsRoutes from './routes/stats.js'
 import squadRoutes from './routes/squads.js'
 import authRoutes from './routes/auth.js'
-import v1Routes from './routes/v1/index.js'
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const uploadDir = path.join(__dirname, 'public', 'uploads')
-
-// 确保上传目录存在
-fs.mkdirSync(uploadDir, { recursive: true })
+import { authenticate, requirePermission } from './middleware/auth.js'
+import { authService } from './services/authService.js'
+import { uploadDir, makeFilename, sniffImageType, resolveUploadPath, deleteUpload } from './uploads.js'
+import { ah } from './routes/helpers.js'
+import { HttpError } from './errors.js'
+import './db.js'   // 触发 schema 与迁移
 
 const app = express()
 const httpServer = createServer(app)
-const io = new Server(httpServer, { cors: { origin: '*' } })
 
-// 将 io 挂载到 app 上，供各路由访问
+const PORT = process.env.PORT || 3001
+const IS_PROD = process.env.NODE_ENV === 'production'
+
+// CORS：生产环境收敛到白名单，开发环境放开
+const corsOrigins = (process.env.CORS_ORIGINS || '')
+  .split(',').map(s => s.trim()).filter(Boolean)
+
+const corsOptions = IS_PROD
+  ? { origin: corsOrigins, credentials: true }
+  : { origin: true, credentials: true }
+
+const io = new Server(httpServer, { cors: { origin: corsOptions.origin, credentials: true } })
 app.set('io', io)
 
-// Socket.IO 连接日志
-io.on('connection', (socket) => {
-  console.log('Client connected:', socket.id)
-})
-
-// Middleware
-app.use(cors())
-app.use(express.json())
-
-// 静态文件服务（用于访问上传的图片）
-app.use('/uploads', express.static(path.join(__dirname, 'public', 'uploads')))
-
-// 文件上传配置
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadDir)
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9)
-    const ext = path.extname(file.originalname)
-    cb(null, `team-${uniqueSuffix}${ext}`)
+// Socket 连接必须携带有效 token，否则立即断开
+io.on('connection', socket => {
+  const token = socket.handshake.auth?.token
+  if (!token || !authService.verifyToken(token)) {
+    socket.disconnect(true)
   }
 })
 
+app.use(cors(corsOptions))
+app.use(express.json({ limit: '1mb' }))
+
+// --- 上传 -----------------------------------------------------------------
 const upload = multer({
-  storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
-  fileFilter: (req, file, cb) => {
-    const allowedTypes = /jpeg|jpg|png|gif|webp/
-    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase())
-    const mimetype = allowedTypes.test(file.mimetype)
-    if (extname && mimetype) {
-      cb(null, true)
-    } else {
-      cb(new Error('只支持图片文件: jpeg, jpg, png, gif, webp'))
+  storage: multer.memoryStorage(),   // 读文件头校验真实类型后再落盘
+  limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+})
+
+app.post('/api/upload/team-logo',
+  authenticate,
+  requirePermission('teams:write'),
+  upload.single('logo'),
+  ah(async (req, res) => {
+    if (!req.file) return res.status(400).json({ error: '没有上传文件' })
+
+    // 不信任客户端提供的 mimetype 与扩展名，以文件头为准
+    const realType = sniffImageType(req.file.buffer)
+    if (!realType) {
+      return res.status(400).json({ error: '只支持 jpeg / png / gif / webp 图片' })
     }
-  }
-})
 
-// 上传路由
-app.post('/api/upload/team-logo', upload.single('logo'), (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ error: '没有上传文件' })
-  }
-  const logoUrl = `/uploads/${req.file.filename}`
-  res.json({ url: logoUrl, filename: req.file.filename })
-})
+    const filename = makeFilename('logo', realType)
+    fs.writeFileSync(resolveUploadPath(`/uploads/${filename}`), req.file.buffer)
+    res.status(201).json({ url: `/uploads/${filename}`, filename })
+  })
+)
 
-// 删除图片路由
-app.delete('/api/upload/:filename', (req, res) => {
-  const filename = path.basename(req.params.filename)
-  const filepath = path.join(uploadDir, filename)
-  if (fs.existsSync(filepath)) {
-    fs.unlinkSync(filepath)
-  }
-  res.json({ success: true })
-})
+app.delete('/api/upload/:filename',
+  authenticate,
+  requirePermission('teams:write'),
+  ah(async (req, res) => {
+    deleteUpload(req.params.filename)
+    res.json({ success: true })
+  })
+)
 
-// Routes
+// 上传文件读取：必须登录。此前用 express.static 裸暴露，任何人可直接下载。
+// 同时挂在 /api/uploads 下，便于前端走 vite 代理；/uploads 保留兼容历史数据。
+const serveUpload = (req, res) => {
+  const full = resolveUploadPath(req.params.filename)
+  if (!full || !fs.existsSync(full)) return res.status(404).json({ error: '文件不存在' })
+  res.setHeader('Cache-Control', 'private, max-age=300')
+  res.sendFile(full)
+}
+app.get('/api/uploads/:filename', authenticate, serveUpload)
+app.get('/uploads/:filename', authenticate, serveUpload)
+
+// --- 业务路由 --------------------------------------------------------------
+// 所有业务接口均需登录，读写权限在各自路由内细分
 app.use('/api/auth', authRoutes)
-app.use('/api/teams', teamRoutes)
-app.use('/api/players', playerRoutes)
-app.use('/api/v1', v1Routes)
-app.use('/api/games', (req, res) => {
-  res.redirect(307, '/api/v1/games' + req.path)
-})
-app.use('/api/stats', statsRoutes)
-app.use('/api/squads', squadRoutes)
+app.use('/api/teams', authenticate, teamRoutes)
+app.use('/api/players', authenticate, playerRoutes)
+app.use('/api/squads', authenticate, squadRoutes)
+app.use('/api/stats', authenticate, statsRoutes)
+app.use('/api/games', authenticate, gameRoutes)
+// 保留 /api/v1 前缀兼容性（原先文档写的是 /api/v1/games）
+app.use('/api/v1/games', authenticate, gameRoutes)
 
-// Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() })
 })
 
-// Error handling
-app.use((err, req, res, next) => {
-  console.error('Error:', err)
-  res.status(500).json({ error: err.message || 'Internal server error' })
+// 404
+app.use((req, res) => {
+  res.status(404).json({ error: `接口不存在: ${req.method} ${req.path}` })
 })
 
-const PORT = process.env.PORT || 3001
-httpServer.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`)
+// 统一错误处理
+app.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    const msg = err.code === 'LIMIT_FILE_SIZE' ? '文件超过 5MB 限制' : err.message
+    return res.status(400).json({ error: msg })
+  }
+  if (err instanceof HttpError) {
+    return res.status(err.status).json({ error: err.message })
+  }
+  console.error('[error]', err)
+  res.status(500).json({ error: IS_PROD ? '服务器内部错误' : err.message })
 })
+
+// 仅在直接运行时监听端口；被 import（如测试）时由调用方决定何时 listen，
+// 否则 import 就会抢占端口。
+const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href
+
+export function start(port = PORT) {
+  return new Promise(resolve => {
+    httpServer.listen(port, () => {
+      console.log(`Server running on http://localhost:${httpServer.address().port}`)
+      console.log(`Uploads dir: ${uploadDir}`)
+      resolve(httpServer)
+    })
+  })
+}
+
+if (isMain) {
+  start()
+}
+
+export { app, httpServer, io }

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth, ROLES } from '../context/AuthContext'
 import { useApp } from '../context/AppContext'
-import { API_BASE_URL } from '../utils/apiConfig'
+import AuthImage from '../components/AuthImage'
 
 function Register() {
   const [username, setUsername] = useState('')
@@ -41,11 +41,6 @@ function Register() {
     }
   }
 
-  const getLogoUrl = (logo) => {
-    if (!logo) return null
-    if (logo.startsWith('http')) return logo
-    return `${API_BASE_URL}${logo}`
-  }
 
   const theme = localStorage.getItem('theme') || 'green'
   const themeClasses = {
@@ -68,7 +63,7 @@ function Register() {
           )}
           <div className="flex items-center justify-center gap-2 mb-2">
             {clubLogo && (
-              <img src={getLogoUrl(clubLogo)} alt="Club" className="w-12 h-12 object-contain" />
+              <AuthImage src={clubLogo} alt="Club" className="w-12 h-12 object-contain" />
             )}
             <h1 className={`text-3xl font-bold ${themeClasses[theme]?.replace('bg-', 'text-') || 'text-green-800'}`}>
               {clubLogo ? '' : '⚾'} {t('appName')}

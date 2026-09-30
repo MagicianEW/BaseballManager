@@ -5,7 +5,7 @@ import { authAPI } from '../utils/api'
 import { uploadAPI } from '../utils/api'
 import { ROLES } from '../context/AuthContext'
 import { THEMES, LANGUAGES } from '../context/AppContext'
-import { API_BASE_URL } from '../utils/apiConfig'
+import AuthImage from '../components/AuthImage'
 
 function Settings() {
   const { theme, language, clubName, clubLogo, setTheme, setLanguage, setClubName, setClubLogo, t } = useApp()
@@ -61,11 +61,6 @@ function Settings() {
     setClubLogo('')
   }
 
-  const getLogoUrl = (logo) => {
-    if (!logo) return null
-    if (logo.startsWith('http')) return logo
-    return `${API_BASE_URL}${logo}`
-  }
 
   // 用户管理相关函数
   const handleCreateAdmin = async (e) => {
@@ -207,7 +202,7 @@ function Settings() {
         {clubLogo && (
           <div className="mt-4 flex items-center gap-4">
             <img
-              src={getLogoUrl(clubLogo)}
+              src={clubLogo}
               alt="Club Logo"
               className="w-20 h-20 object-contain border rounded"
             />

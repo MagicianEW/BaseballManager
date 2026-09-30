@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react'
 import { authAPI, setToken, clearToken, setCurrentUser, clearCurrentUser, getCurrentUser } from '../utils/api'
+import { closeSocket } from '../utils/socket'
 
 const AuthContext = createContext(null)
 
@@ -33,28 +34,30 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  // 权限由服务端下发，避免前后端各维护一份 PERMISSIONS 导致漂移
+  const [permissions, setPermissions] = useState(null)
 
-  // 检查是否有写权限
-  const canWrite = useCallback((permission = null) => {
+  // 检查是否有写权限。
+  // 修复：此前 canWrite('games') 里 'games'.replace(':read', ':write') 仍是 'games'，
+  // 而 coach 权限表只有 'games:write'，导致 coach 在全部 27 个调用点被判为无写权限。
+  const canWrite = useCallback((resource = null) => {
     if (!user) return false
-    const perms = PERMISSIONS[user.role]
+    const perms = permissions ?? PERMISSIONS[user.role]
     if (!perms) return false
     if (perms.includes('*')) return true
-    if (permission) {
-      const writePerm = permission.replace(':read', ':write')
-      return perms.includes(writePerm) || perms.includes(permission)
-    }
-    return perms.some(p => p.endsWith(':write'))
-  }, [user])
+    if (!resource) return perms.some(p => p.endsWith(':write'))
+    return perms.includes(`${resource}:write`)
+  }, [user, permissions])
 
   // 检查是否有读权限
-  const canRead = useCallback((permission = null) => {
+  const canRead = useCallback((resource = null) => {
     if (!user) return false
-    const perms = PERMISSIONS[user.role]
+    const perms = permissions ?? PERMISSIONS[user.role]
     if (!perms) return false
     if (perms.includes('*')) return true
-    return perms.includes(permission) || perms.some(p => p.includes(permission?.split(':')[0]))
-  }, [user])
+    if (!resource) return true
+    return perms.includes(`${resource}:read`) || perms.includes(`${resource}:write`)
+  }, [user, permissions])
 
   // 检查是否是管理员
   const isAdmin = useCallback(() => {
@@ -100,7 +103,19 @@ export function AuthProvider({ children }) {
   const logout = useCallback(() => {
     clearToken()
     clearCurrentUser()
+    closeSocket()
     setUser(null)
+    setPermissions(null)
+  }, [])
+
+  // 从服务端拉取当前用户的权限
+  const loadPermissions = useCallback(async () => {
+    try {
+      const res = await authAPI.getPermissions()
+      if (res?.permissions) setPermissions(res.permissions)
+    } catch {
+      setPermissions(null)   // 拉取失败时回退到本地表
+    }
   }, [])
 
   // 检查登录状态
@@ -114,6 +129,7 @@ export function AuthProvider({ children }) {
           const freshUser = await authAPI.getMe()
           setUser(freshUser)
           setCurrentUser(freshUser)
+          await loadPermissions()
         } catch {
           // token 失效，清除登录状态
           logout()
@@ -124,16 +140,24 @@ export function AuthProvider({ children }) {
     } finally {
       setLoading(false)
     }
-  }, [logout])
+  }, [logout, loadPermissions])
 
   useEffect(() => {
     checkAuth()
   }, [checkAuth])
 
+  // token 过期时 API 层会派发该事件
+  useEffect(() => {
+    const onExpired = () => logout()
+    window.addEventListener('auth:expired', onExpired)
+    return () => window.removeEventListener('auth:expired', onExpired)
+  }, [logout])
+
   const value = {
     user,
     loading,
     error,
+    permissions,
     login,
     register,
     logout,

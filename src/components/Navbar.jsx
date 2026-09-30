@@ -1,7 +1,7 @@
 import { useAuth } from '../context/AuthContext'
 import { useApp } from '../context/AppContext'
 import { Link, useNavigate } from 'react-router-dom'
-import { API_BASE_URL } from '../utils/apiConfig'
+import AuthImage from './AuthImage'
 
 /**
  * 导航栏组件
@@ -30,11 +30,6 @@ function Navbar() {
     cyan: 'bg-cyan-700 hover:bg-cyan-600',
   }
 
-  const getLogoUrl = (logo) => {
-    if (!logo) return null
-    if (logo.startsWith('http')) return logo
-    return `${API_BASE_URL}${logo}`
-  }
 
   return (
     <nav className={`${themeClasses[theme] || themeClasses.green} text-white shadow-lg`}>
@@ -43,7 +38,7 @@ function Navbar() {
           <div className="flex items-center gap-8">
             <div className="flex items-center gap-2">
               {clubLogo && (
-                <img src={getLogoUrl(clubLogo)} alt="Club" className="w-10 h-10 object-contain" />
+                <AuthImage src={clubLogo} alt="Club" className="w-10 h-10 object-contain" />
               )}
               <h1 className="text-xl font-bold">{clubLogo ? '' : '⚾'} {t('appName')}</h1>
             </div>

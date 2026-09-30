@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { api } from '../utils/api'
 import { useAuth } from '../context/AuthContext'
 import { useApp } from '../context/AppContext'
-import { API_BASE_URL } from '../utils/apiConfig'
+import AuthImage from '../components/AuthImage'
 
 function Teams() {
   const { canWrite } = useAuth()
@@ -54,7 +54,17 @@ function Teams() {
     if (!canWrite('teams')) return
     setEditing(team)
     setForm({ name: team.name, stadium: team.stadium, logo: team.logo || '' })
-    setPreviewUrl(team.logo ? `${API_BASE_URL}${team.logo}` : null)
+    // 上传后的即时预览：直接用本地 objectURL，避免再次请求受保护资源
+    if (team.logo) {
+      const token = localStorage.getItem('token')
+      fetch(`/api/uploads/${encodeURIComponent(team.logo.replace(/^\/uploads\//, ''))}`,
+            { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+        .then(r => r.ok ? r.blob() : Promise.reject())
+        .then(b => setPreviewUrl(URL.createObjectURL(b)))
+        .catch(() => setPreviewUrl(null))
+    } else {
+      setPreviewUrl(null)
+    }
   }
 
   const handleFileChange = async (e) => {
@@ -78,11 +88,6 @@ function Teams() {
     }
   }
 
-  const getLogoUrl = (logo) => {
-    if (!logo) return null
-    if (logo.startsWith('http')) return logo
-    return `${API_BASE_URL}${logo}`
-  }
 
   return (
     <div>
@@ -167,7 +172,7 @@ function Teams() {
             <div className="flex items-center gap-4 mb-2">
               {team.logo ? (
                 <img
-                  src={getLogoUrl(team.logo)}
+                  src={team.logo}
                   alt={team.name}
                   className="w-16 h-16 object-contain"
                   onError={(e) => { e.target.style.display = 'none' }}

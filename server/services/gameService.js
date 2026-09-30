@@ -1,296 +1,323 @@
-import { getDb, saveDb } from '../db.js'
+import { all, get, run, tx } from '../db.js'
+import { resolvePlay, toBitmask } from './scoring.js'
+import { BadRequest } from '../errors.js'
 
 /**
  * 比赛服务层
+ *
+ * 计分相关的规则全部在 scoring.js 中，本文件只负责读写与状态推进。
  */
 
-// 垒上局面位掩码定义
-// bit 0 (1) = 一垒有人
-// bit 1 (2) = 二垒有人
-// bit 2 (4) = 三垒有人
-// 可以通过 OR 组合：0=无人, 1=一垒, 2=二垒, 4=三垒, 3=一二垒, 5=一三垒, 6=二三垒, 7=满垒
-const FIRST_BASE = 1
-const SECOND_BASE = 2
-const THIRD_BASE = 4
+const GAME_COLUMNS = `g.id, g.date, g.homeTeamId, g.awayTeamId,
+  g.homeScore, g.awayScore, g.status, g.currentInning, g.currentHalf,
+  g.outs, g.balls, g.strikes, g.runners, g.baseSituation,
+  g.homeLineup, g.awayLineup, g.homePitcherId, g.awayPitcherId,
+  g.homeConfirmed, g.awayConfirmed, g.finalInning, g.createdAt,
+  ht.name AS homeTeamName, at.name AS awayTeamName`
 
-// 更新垒上局面（位掩码版本）
-function updateBaseSituation(currentBitmask, hitResult) {
-  if (hitResult === '1B') {
-    let b = 0
-    if (currentBitmask & FIRST_BASE)  b |= SECOND_BASE
-    if (currentBitmask & SECOND_BASE) b |= THIRD_BASE
-    b |= FIRST_BASE
-    return b
-  }
-  if (hitResult === '2B') {
-    // 二垒安打：
-    // - 一垒跑者进三垒
-    // - 二垒跑者被取代（打者直接冲二垒）
-    // - 三垒跑者回本垒得分
-    // - 打者进二垒
-    let b = 0
-    if (currentBitmask & FIRST_BASE) b |= THIRD_BASE  // 一垒跑者进三垒
-    if (currentBitmask & SECOND_BASE) b |= SECOND_BASE  // 二垒跑者留二垒（被打者取代，但留在垒上）
-    b |= SECOND_BASE  // 打者上二垒
-    return b
-  }
-  if (hitResult === '3B') {
-    let b = THIRD_BASE
-    if (currentBitmask & FIRST_BASE)  b |= THIRD_BASE
-    if (currentBitmask & SECOND_BASE) b |= THIRD_BASE
-    return b
-  }
-  if (hitResult === 'HR') return 0
-  return currentBitmask
+const GAME_FROM = `FROM games g
+  LEFT JOIN teams ht ON g.homeTeamId = ht.id
+  LEFT JOIN teams at  ON g.awayTeamId = at.id`
+
+/** 允许通过 update() 修改的列，防止请求体任意 key 变成列名 */
+const UPDATABLE_COLUMNS = new Set([
+  'date', 'homeTeamId', 'awayTeamId', 'homeScore', 'awayScore', 'status',
+  'currentInning', 'currentHalf', 'outs', 'balls', 'strikes',
+  'homeLineup', 'awayLineup', 'homePitcherId', 'awayPitcherId',
+  'homeConfirmed', 'awayConfirmed', 'finalInning',
+])
+
+const parseJSON = (v, fallback) => {
+  try { return v ? JSON.parse(v) : fallback } catch { return fallback }
 }
 
-// 保送时推进垒位（位掩码版本）
-function advanceOnWalk(currentBitmask) {
-  // 从原始状态推导，打者保送上一垒，跑者各进一垒
-  let b = 0
-  if (currentBitmask & SECOND_BASE) b |= THIRD_BASE
-  if (currentBitmask & FIRST_BASE)  b |= SECOND_BASE
-  b |= FIRST_BASE
-  return b
+/**
+ * 推进局数 / 出局 / 比分。
+ * 仅由 addPlateAppearance 在事务内调用。
+ */
+function advanceGameState(game, play, half) {
+  const scoringHalf = half === 'bottom' ? 'home' : 'away'
+  let outs = (game.outs || 0) + play.outs
+  let inning = game.currentInning
+  let curHalf = game.currentHalf
+  const finalInning = game.finalInning || 6
+
+  if (outs >= 3) {
+    outs = 0
+    if (curHalf === 'top') {
+      curHalf = 'bottom'                    // 上半结束 → 下半
+    } else {
+      curHalf = 'top'                       // 下半结束 → 下一局上半
+      inning += 1
+    }
+  }
+
+  // 打满最终局下半即比赛结束（此时已换到下一局上半，需要回退）
+  let status = game.status
+  if (game.status === 'in_progress' && curHalf === 'top' && inning > finalInning) {
+    status = 'completed'
+    inning = finalInning
+    curHalf = 'bottom'
+  }
+
+  const homeScore = (game.homeScore || 0) + (scoringHalf === 'home' ? play.runs.length : 0)
+  const awayScore = (game.awayScore || 0) + (scoringHalf === 'away' ? play.runs.length : 0)
+
+  run(`UPDATE games SET runners = ?, baseSituation = ?, outs = ?, balls = 0, strikes = 0,
+       currentInning = ?, currentHalf = ?, homeScore = ?, awayScore = ?, status = ?
+     WHERE id = ?`,
+    [JSON.stringify(play.runners), toBitmask(play.runners), outs, inning, curHalf,
+     homeScore, awayScore, status, game.id])
+
+  return { runners: play.runners, outs, inning, curHalf, homeScore, awayScore, status }
 }
 
 export const gameService = {
   async getAll() {
-    const db = await getDb()
-    const result = db.exec(`
-      SELECT g.*, ht.name as homeTeamName, at.name as awayTeamName
-      FROM games g
-      LEFT JOIN teams ht ON g.homeTeamId = ht.id
-      LEFT JOIN teams at ON g.awayTeamId = at.id
-      ORDER BY g.id DESC
-    `)
-    return result[0]?.values.map(row => ({
-      id: row[0], date: row[1], homeTeamId: row[2], awayTeamId: row[3],
-      homeScore: row[4], awayScore: row[5], status: row[6],
-      currentInning: row[7], currentHalf: row[8], outs: row[9],
-      balls: row[10], strikes: row[11], baseSituation: row[12],
-      homeLineup: row[13], awayLineup: row[14], homePitcherId: row[15], awayPitcherId: row[16],
-      homeTeamName: row[17], awayTeamName: row[18], confirmed: !!row[19]
-    })) || []
+    return all(`SELECT ${GAME_COLUMNS} ${GAME_FROM} ORDER BY g.id DESC`).map(g => ({
+      ...g,
+      homeConfirmed: !!g.homeConfirmed,
+      awayConfirmed: !!g.awayConfirmed,
+    }))
   },
 
   async getById(id) {
-    const db = await getDb()
-    const result = db.exec(`
-      SELECT g.*, ht.name as homeTeamName, at.name as awayTeamName
-      FROM games g
-      LEFT JOIN teams ht ON g.homeTeamId = ht.id
-      LEFT JOIN teams at ON g.awayTeamId = at.id
-      WHERE g.id = ${id}
-    `)
-    if (!result[0]?.values[0]) return null
+    const game = get(`SELECT ${GAME_COLUMNS} ${GAME_FROM} WHERE g.id = ?`, [id])
+    if (!game) return null
 
-    const row = result[0].values[0]
-    const game = {
-      id: row[0], date: row[1], homeTeamId: row[2], awayTeamId: row[3],
-      homeScore: row[4], awayScore: row[5], status: row[6],
-      currentInning: row[7], currentHalf: row[8], outs: row[9],
-      balls: row[10], strikes: row[11], baseSituation: row[12],
-      homeLineup: row[13], awayLineup: row[14], homePitcherId: row[15], awayPitcherId: row[16],
-      homeTeamName: row[17], awayTeamName: row[18], confirmed: !!row[19], plateAppearances: []
-    }
-
-    const paResult = db.exec(`
-      SELECT pa.*, pb.name as batterName, pp.name as pitcherName
+    const pa = all(`
+      SELECT pa.id, pa.gameId, pa.inning, pa.half, pa.paNumber,
+             pa.batterId, pa.pitcherId, pa.result, pa.rbi, pa.runsScored,
+             pa.scoredRunners, pa.pitches, pa.notes, pa.createdAt,
+             pb.name AS batterName, pp.name AS pitcherName
       FROM plate_appearances pa
       LEFT JOIN players pb ON pa.batterId = pb.id
       LEFT JOIN players pp ON pa.pitcherId = pp.id
-      WHERE pa.gameId = ${id}
-      ORDER BY pa.inning, pa.half, pa.paNumber
-    `)
+      WHERE pa.gameId = ?
+      ORDER BY pa.inning, pa.half, pa.paNumber`, [id])
 
-    game.plateAppearances = paResult[0]?.values.map(paRow => ({
-      id: paRow[0], gameId: paRow[1], inning: paRow[2], half: paRow[3],
-      paNumber: paRow[4], batterId: paRow[5], pitcherId: paRow[6],
-      result: paRow[7], rbi: paRow[8], runsScored: paRow[9],
-      pitches: paRow[10], notes: paRow[11], batterName: paRow[12], pitcherName: paRow[13]
-    })) || []
-
-    return game
+    return {
+      ...game,
+      homeConfirmed: !!game.homeConfirmed,
+      awayConfirmed: !!game.awayConfirmed,
+      runners: parseJSON(game.runners, []),
+      homeLineup: parseJSON(game.homeLineup, []),
+      awayLineup: parseJSON(game.awayLineup, []),
+      plateAppearances: pa.map(p => ({ ...p, scoredRunners: parseJSON(p.scoredRunners, []) })),
+    }
   },
 
   async create(data) {
-    const db = await getDb()
-    db.run(`
-      INSERT INTO games (date, homeTeamId, awayTeamId, homeLineup, awayLineup, homePitcherId, awayPitcherId, confirmed)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 0)
-    `, [
-      data.date || null,
-      data.homeTeamId || null,
-      data.awayTeamId || null,
-      JSON.stringify(data.homeLineup || []),
-      JSON.stringify(data.awayLineup || []),
-      data.homePitcherId || null,
-      data.awayPitcherId || null
-    ])
-    const result = db.exec('SELECT last_insert_rowid()')
-    saveDb()
-    return { id: result[0].values[0][0], ...data, status: 'scheduled' }
+    const id = run(`
+      INSERT INTO games (date, homeTeamId, awayTeamId, homeLineup, awayLineup,
+                         homePitcherId, awayPitcherId, finalInning)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        data.date || null,
+        data.homeTeamId,
+        data.awayTeamId,
+        JSON.stringify(data.homeLineup || []),
+        JSON.stringify(data.awayLineup || []),
+        data.homePitcherId || null,
+        data.awayPitcherId || null,
+        data.finalInning || 6,
+      ]).lastInsertRowid
+
+    return { id: Number(id), ...data, status: 'scheduled' }
   },
 
   async update(id, data) {
-    const db = await getDb()
     const fields = []
     const values = []
 
     for (const [key, value] of Object.entries(data)) {
-      if (key !== 'id') {
-        fields.push(`${key} = ?`)
-        values.push(typeof value === 'object' ? JSON.stringify(value) : value)
+      if (key === 'id') continue
+      // 非法列名直接丢弃，不拼进 SQL
+      if (!UPDATABLE_COLUMNS.has(key)) {
+        if (process.env.NODE_ENV !== 'production') {
+          console.warn(`[gameService.update] 忽略不可写字段: ${key}`)
+        }
+        continue
       }
+      fields.push(`${key} = ?`)
+      values.push(Array.isArray(value) || (value !== null && typeof value === 'object')
+        ? JSON.stringify(value)
+        : value)
     }
 
-    values.push(id)
-    db.run(`UPDATE games SET ${fields.join(', ')} WHERE id = ?`, values)
-    saveDb()
+    if (fields.length) {
+      values.push(id)
+      run(`UPDATE games SET ${fields.join(', ')} WHERE id = ?`, values)
+    }
     return { id, ...data }
   },
 
   async delete(id) {
-    const db = await getDb()
-    db.run('DELETE FROM plate_appearances WHERE gameId = ?', [id])
-    db.run('DELETE FROM games WHERE id = ?', [id])
-    saveDb()
+    // plate_appearances / substitutions 由外键 ON DELETE CASCADE 清理
+    run('DELETE FROM games WHERE id = ?', [id])
     return { success: true }
   },
 
+  /**
+   * 记录一个打席。插入记录与推进比赛状态必须在同一事务内，
+   * 否则中途失败会留下「比分变了但没有打席记录」的脏数据。
+   */
   async addPlateAppearance(gameId, data) {
-    const db = await getDb()
+    const result = data.result
 
-    db.run(`
-      INSERT INTO plate_appearances (gameId, inning, half, paNumber, batterId, pitcherId, result, rbi, runsScored, pitches, notes)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      gameId, data.inning, data.half, data.paNumber,
-      data.batterId, data.pitcherId, data.result,
-      data.rbi || 0, data.runsScored || 0,
-      JSON.stringify(data.pitches || []), data.notes || null
-    ])
+    return tx(() => {
+      const game = get('SELECT * FROM games WHERE id = ?', [gameId])
+      if (!game) throw new Error('比赛不存在')
 
-    const result = db.exec('SELECT last_insert_rowid()')
-    saveDb()
+      // 外键现在真正启用（此前 6 张表声明了 FK 却从未打开约束），
+      // 需要显式校验，给出可读错误而不是 500
+      for (const [field, pid] of [['batterId', data.batterId], ['pitcherId', data.pitcherId]]) {
+        if (pid != null && !get('SELECT id FROM players WHERE id = ?', [pid])) {
+          throw new BadRequest(`${field}=${pid} 对应的球员不存在`)
+        }
+      }
 
-    // 更新比赛状态
-    await this.updateGameState(gameId, data.result, data.half)
+      const half = data.half || game.currentHalf
+      const inning = data.inning || game.currentInning
+      const runners = parseJSON(game.runners, [])
 
-    return { id: result[0].values[0][0], gameId, ...data }
+      // 未知结果码（SB/CS 等跑垒动作）原样记录，不改变局面
+      const play = resolvePlay(runners, data.batterId, result)
+      if (play.unknown) {
+        const id = run(`
+          INSERT INTO plate_appearances
+            (gameId, inning, half, paNumber, batterId, pitcherId, result, pitches, notes)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [gameId, inning, half, data.paNumber, data.batterId, data.pitcherId,
+           result, JSON.stringify(data.pitches || []), data.notes || null]).lastInsertRowid
+        return { id: Number(id), gameId, ...data, runs: 0, rbi: 0, runsScored: 0 }
+      }
+
+      const runsScored = play.runs.length
+      // 官方口径：全垒打打者自己跑回本垒那一分不计 RBI
+      const rbi = Math.max(0, runsScored - (result === 'HR' ? 1 : 0))
+
+      const paId = run(`
+        INSERT INTO plate_appearances
+          (gameId, inning, half, paNumber, batterId, pitcherId, result,
+           rbi, runsScored, scoredRunners, pitches, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [gameId, inning, half, data.paNumber, data.batterId, data.pitcherId, result,
+         rbi, runsScored, JSON.stringify(play.runs),
+         JSON.stringify(data.pitches || []), data.notes || null]).lastInsertRowid
+
+      const next = advanceGameState(game, play, half)
+
+      return {
+        id: Number(paId),
+        gameId,
+        ...data,
+        runs: runsScored,
+        runsScored,
+        rbi,
+        scoredRunners: play.runs,
+        game: next,
+      }
+    })()
   },
 
-  async updateGameState(gameId, result, half) {
-    const db = await getDb()
-    const gameResult = db.exec(`SELECT * FROM games WHERE id = ${gameId}`)
-    if (!gameResult[0]?.values[0]) return
-
-    const game = gameResult[0].values[0]
-    let outs = game[9] || 0
-    let baseSituation = game[12] || 0
-    let homeScore = game[4] || 0
-    let awayScore = game[5] || 0
-
-    if (['SO', 'GO', 'FO', 'GDP'].includes(result)) {
-      outs++
-      if (outs >= 3) {
-        outs = 0
-        baseSituation = 0
+  /**
+   * 手动结束半局（记分员手动纠错用）
+   */
+  async advanceHalf(gameId) {
+    return tx(() => {
+      const game = get('SELECT * FROM games WHERE id = ?', [gameId])
+      if (!game) throw new Error('比赛不存在')
+      const finalInning = game.finalInning || 6
+      let inning = game.currentInning
+      let curHalf = game.currentHalf === 'top' ? 'bottom' : 'top'
+      let status = game.status
+      if (curHalf === 'top') {
+        inning += 1
+        if (inning > finalInning) { status = 'completed'; inning = finalInning; curHalf = 'bottom' }
       }
-    } else if (['1B', '2B', '3B', 'HR'].includes(result)) {
-      baseSituation = updateBaseSituation(baseSituation, result)
-      if (result === 'HR') {
-        if (half === 'top') awayScore++
-        else homeScore++
-      }
-    } else if (['BB', 'HBP', 'IBB'].includes(result)) {
-      baseSituation = advanceOnWalk(baseSituation)
-    }
-
-    db.run(`
-      UPDATE games SET outs = ?, baseSituation = ?, homeScore = ?, awayScore = ? WHERE id = ?
-    `, [outs, baseSituation, homeScore, awayScore, gameId])
-    saveDb()
+      run(`UPDATE games SET currentHalf = ?, currentInning = ?, outs = 0, balls = 0, strikes = 0,
+           baseSituation = 0, runners = '[]', status = ? WHERE id = ?`,
+        [curHalf, inning, status, gameId])
+      return { inning, curHalf, status }
+    })()
   },
 
   async changePitcher(gameId, team, pitcherId) {
-    const db = await getDb()
+    if (team !== 'home' && team !== 'away') throw new Error('team 必须是 home 或 away')
     const field = team === 'home' ? 'homePitcherId' : 'awayPitcherId'
-    db.run(`UPDATE games SET ${field} = ? WHERE id = ?`, [pitcherId, gameId])
-    saveDb()
+    run(`UPDATE games SET ${field} = ? WHERE id = ?`, [pitcherId, gameId])
     return { success: true, pitcherId }
   },
 
-    async changeBatter(gameId, team, batterId, lineupIndex) {
-    const db = await getDb()
+  async changeBatter(gameId, team, batterId, lineupIndex) {
+    if (team !== 'home' && team !== 'away') throw new Error('team 必须是 home 或 away')
     const field = team === 'home' ? 'homeLineup' : 'awayLineup'
-    const gameResult = db.exec(`SELECT ${field} FROM games WHERE id = ${gameId}`)
+    const game = get(`SELECT ${field} AS lineup FROM games WHERE id = ?`, [gameId])
+    if (!game) throw new Error('比赛不存在')
 
-    if (gameResult[0]?.values[0]) {
-      const lineup = JSON.parse(gameResult[0].values[0][0] || '[]')
-      lineup[lineupIndex] = batterId
-      db.run(`UPDATE games SET ${field} = ? WHERE id = ?`, [JSON.stringify(lineup), gameId])
-      saveDb()
+    const lineup = parseJSON(game.lineup, [])
+    const idx = Number(lineupIndex)
+    if (!Number.isInteger(idx) || idx < 0 || idx >= lineup.length) {
+      throw new Error('lineupIndex 超出范围')
     }
-
-    return { success: true, batterId }
+    lineup[idx] = batterId
+    run(`UPDATE games SET ${field} = ? WHERE id = ?`, [JSON.stringify(lineup), gameId])
+    return { success: true, batterId, lineupIndex: idx }
   },
 
-  // 添加换人记录（代跑/代打）
+  // 代跑 / 代打
   async addSubstitution(gameId, data) {
-    const db = await getDb()
-    db.run(`
-      INSERT INTO substitutions (gameId, atBatId, type, originalPlayerId, substitutePlayerId, base, reason)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `, [
-      gameId,
-      data.atBatId || null,
-      data.type,
-      data.originalPlayerId,
-      data.substitutePlayerId,
-      data.base || null,
-      data.reason || null
-    ])
-    const result = db.exec('SELECT last_insert_rowid()')
-    saveDb()
-    return { id: result[0].values[0][0], gameId, ...data }
+    const id = run(`
+      INSERT INTO substitutions
+        (gameId, atBatId, type, originalPlayerId, substitutePlayerId, base, reason)
+      VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [gameId, data.atBatId || null, data.type, data.originalPlayerId,
+       data.substitutePlayerId, data.base || null, data.reason || null]).lastInsertRowid
+    return { id: Number(id), gameId, ...data }
   },
 
-  // 获取比赛的所有换人记录
   async getSubstitutions(gameId, type) {
-    const db = await getDb()
-    let query = `
-      SELECT s.*, 
-        op.name as originalPlayerName, 
-        sp.name as substitutePlayerName,
-        pa.inning, pa.half
+    const params = [gameId]
+    let filter = ''
+    if (type) { filter = ' AND s.type = ?'; params.push(type) }
+
+    return all(`
+      SELECT s.id, s.gameId, s.atBatId, s.type, s.originalPlayerId, s.substitutePlayerId,
+             s.base, s.reason, s.createdAt,
+             op.name AS originalPlayerName, sp.name AS substitutePlayerName,
+             pa.inning, pa.half
       FROM substitutions s
       LEFT JOIN players op ON s.originalPlayerId = op.id
       LEFT JOIN players sp ON s.substitutePlayerId = sp.id
       LEFT JOIN plate_appearances pa ON s.atBatId = pa.id
-      WHERE s.gameId = ${gameId}
-    `
-    if (type) {
-      query += ` AND s.type = '${type}'`
-    }
-    query += ' ORDER BY s.createdAt'
-
-    const result = db.exec(query)
-    return result[0]?.values.map(row => ({
-      id: row[0], gameId: row[1], atBatId: row[2], type: row[3],
-      originalPlayerId: row[4], substitutePlayerId: row[5],
-      base: row[6], reason: row[7], createdAt: row[8],
-      originalPlayerName: row[9], substitutePlayerName: row[10],
-      inning: row[11], half: row[12]
-    })) || []
+      WHERE s.gameId = ?${filter}
+      ORDER BY s.createdAt`, params)
   },
 
-  // 确认阵容（教练确认）
+  /**
+   * 确认阵容。主客队分别锁定，此前 team 参数被忽略导致一把锁两队，
+   * 且空阵容也能确认。
+   */
   async confirmLineup(gameId, team) {
-    const db = await getDb()
-    db.run(`UPDATE games SET confirmed = 1 WHERE id = ?`, [gameId])
-    saveDb()
-    return { success: true, confirmed: true }
-  }
+    if (team !== 'home' && team !== 'away') throw new Error('team 必须是 home 或 away')
+    const game = get('SELECT homeLineup, awayLineup FROM games WHERE id = ?', [gameId])
+    if (!game) throw new Error('比赛不存在')
+
+    const lineup = parseJSON(team === 'home' ? game.homeLineup : game.awayLineup, [])
+    const filled = lineup.filter(Boolean).length
+    if (filled === 0) throw new Error('阵容为空，无法确认')
+
+    const field = team === 'home' ? 'homeConfirmed' : 'awayConfirmed'
+    run(`UPDATE games SET ${field} = 1 WHERE id = ?`, [gameId])
+    return { success: true, team, confirmed: true, lineupSize: filled }
+  },
+
+  // 解锁阵容（赛前调整）
+  async reopenLineup(gameId, team) {
+    if (team !== 'home' && team !== 'away') throw new Error('team 必须是 home 或 away')
+    const field = team === 'home' ? 'homeConfirmed' : 'awayConfirmed'
+    run(`UPDATE games SET ${field} = 0 WHERE id = ?`, [gameId])
+    return { success: true, team, confirmed: false }
+  },
 }

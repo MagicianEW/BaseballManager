@@ -37,13 +37,25 @@ async function fetchAPI(endpoint, options = {}) {
 
   try {
     const response = await fetch(url, config)
+    if (response.status === 401) {
+      // token 失效，清除本地状态并通知订阅者跳回登录页
+      clearToken()
+      clearCurrentUser()
+      window.dispatchEvent(new CustomEvent('auth:expired'))
+    }
     if (!response.ok) {
-      const error = await response.text()
-      throw new Error(error || `HTTP ${response.status}`)
+      let message = `HTTP ${response.status}`
+      try {
+        const body = await response.json()
+        if (body?.error) message = body.error
+      } catch { /* 非 JSON 响应，沿用默认文案 */ }
+      const err = new Error(message)
+      err.status = response.status
+      throw err
     }
     return response.json()
   } catch (error) {
-    console.error(`API Error [${endpoint}]:`, error)
+    console.error(`API Error [${endpoint}]:`, error.message)
     throw error
   }
 }
@@ -165,9 +177,13 @@ export const gamesAPI = {
   update: (id, data) => fetchAPI(`/games/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id) => fetchAPI(`/games/${id}`, { method: 'DELETE' }),
 
-  // 打席记录
+  // 打席记录：比分/RBI/局数全部由服务端计分引擎计算，前端不传局面字段
   addPlateAppearance: (gameId, data) =>
     fetchAPI(`/games/${gameId}/pa`, { method: 'POST', body: JSON.stringify(data) }),
+
+  // 手动结束半局（记分员纠错）
+  advanceHalf: (gameId) =>
+    fetchAPI(`/games/${gameId}/advance`, { method: 'POST' }),
 
   // 换人
   changePitcher: (gameId, team, pitcherId) =>
@@ -181,9 +197,16 @@ export const gamesAPI = {
       body: JSON.stringify({ team, batterId, lineupIndex }),
     }),
 
-  // 确认阵容
-  confirmLineup: (gameId) =>
-    fetchAPI(`/games/${gameId}/lineup/confirm`, { method: 'POST' }),
+  // 代跑 / 代打
+  getSubstitutions: (gameId) => fetchAPI(`/games/${gameId}/substitutions`),
+  addSubstitution: (gameId, data) =>
+    fetchAPI(`/games/${gameId}/substitutions`, { method: 'POST', body: JSON.stringify(data) }),
+
+  // 确认阵容：主客队分别锁定
+  confirmLineup: (gameId, team) =>
+    fetchAPI(`/games/${gameId}/lineup/confirm`, { method: 'POST', body: JSON.stringify({ team }) }),
+  reopenLineup: (gameId, team) =>
+    fetchAPI(`/games/${gameId}/lineup/reopen`, { method: 'POST', body: JSON.stringify({ team }) }),
 }
 
 /**

@@ -1,92 +1,67 @@
 import express from 'express'
 import { playerService } from '../services/playerService.js'
+import { requirePermission } from '../middleware/auth.js'
+import { ah, intParam } from './helpers.js'
 
 const router = express.Router()
 
-// 获取所有球员
-router.get('/', async (req, res) => {
-  try {
-    const players = await playerService.getAll()
-    res.json(players)
-  } catch (error) {
-    res.status(500).json({ error: error.message })
-  }
-})
+// 注意：/team/:teamId 与 /squad/:squadId 必须声明在 /:id 之前，
+// 否则 "team" 会被当作 :id 匹配
 
-// 获取单个球员
-router.get('/:id', async (req, res) => {
-  try {
-    const player = await playerService.getById(req.params.id)
-    if (!player) return res.status(404).json({ error: 'Player not found' })
-    res.json(player)
-  } catch (error) {
-    res.status(500).json({ error: error.message })
-  }
-})
+// 读取
+router.get('/', requirePermission('players:read'), ah(async (req, res) => {
+  res.json(await playerService.getAll())
+}))
 
-// 创建球员
-router.post('/', async (req, res) => {
-  try {
-    const { name } = req.body
-    if (!name || typeof name !== 'string' || name.trim().length === 0) {
-      return res.status(400).json({ error: '球员姓名必填' })
-    }
-    const player = await playerService.create(req.body)
-    res.json(player)
-  } catch (error) {
-    res.status(500).json({ error: error.message })
-  }
-})
+router.get('/team/:teamId', requirePermission('players:read'), ah(async (req, res) => {
+  const teamId = intParam(req, res, 'teamId'); if (!teamId) return
+  res.json(await playerService.getByTeam(teamId))
+}))
 
-// 更新球员
-router.put('/:id', async (req, res) => {
-  try {
-    const player = await playerService.update(req.params.id, req.body)
-    res.json(player)
-  } catch (error) {
-    res.status(500).json({ error: error.message })
-  }
-})
+router.get('/squad/:squadId', requirePermission('players:read'), ah(async (req, res) => {
+  const squadId = intParam(req, res, 'squadId'); if (!squadId) return
+  res.json(await playerService.getBySquad(squadId))
+}))
 
-// 删除球员
-router.delete('/:id', async (req, res) => {
-  try {
-    await playerService.delete(req.params.id)
-    res.json({ success: true })
-  } catch (error) {
-    res.status(500).json({ error: error.message })
-  }
-})
+router.get('/:id', requirePermission('players:read'), ah(async (req, res) => {
+  const id = intParam(req, res, 'id'); if (!id) return
+  const player = await playerService.getById(id)
+  if (!player) return res.status(404).json({ error: '球员不存在' })
+  res.json(player)
+}))
 
-// 获取球队球员
-router.get('/team/:teamId', async (req, res) => {
-  try {
-    const players = await playerService.getByTeam(req.params.teamId)
-    res.json(players)
-  } catch (error) {
-    res.status(500).json({ error: error.message })
+// 写入
+const validatePlayer = (body, res) => {
+  if (!body?.name || typeof body.name !== 'string' || !body.name.trim()) {
+    res.status(400).json({ error: '球员姓名必填' })
+    return false
   }
-})
+  return true
+}
 
-// 获取梯队球员
-router.get('/squad/:squadId', async (req, res) => {
-  try {
-    const players = await playerService.getBySquad(req.params.squadId)
-    res.json(players)
-  } catch (error) {
-    res.status(500).json({ error: error.message })
-  }
-})
+router.post('/', requirePermission('players:write'), ah(async (req, res) => {
+  if (!validatePlayer(req.body, res)) return
+  res.status(201).json(await playerService.create(req.body))
+}))
+
+router.put('/:id', requirePermission('players:write'), ah(async (req, res) => {
+  const id = intParam(req, res, 'id'); if (!id) return
+  if (!validatePlayer(req.body, res)) return
+  res.json(await playerService.update(id, req.body))
+}))
+
+router.delete('/:id', requirePermission('players:write'), ah(async (req, res) => {
+  const id = intParam(req, res, 'id'); if (!id) return
+  res.json(await playerService.delete(id))
+}))
 
 // 球员晋升
-router.post('/promote', async (req, res) => {
-  try {
-    const { playerId, squadId } = req.body
-    const result = await playerService.promote(squadId, playerId)
-    res.json(result)
-  } catch (error) {
-    res.status(500).json({ error: error.message })
+router.post('/promote', requirePermission('players:write'), ah(async (req, res) => {
+  const { playerId, squadId } = req.body || {}
+  if (!playerId || !squadId) {
+    return res.status(400).json({ error: 'playerId 与 squadId 必填' })
   }
-})
+  res.json(await playerService.promote(squadId, playerId))
+}))
 
 export default router

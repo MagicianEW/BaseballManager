@@ -1,61 +1,43 @@
 import express from 'express'
 import { teamService } from '../services/teamService.js'
+import { requirePermission } from '../middleware/auth.js'
+import { ah, intParam } from './helpers.js'
 
 const router = express.Router()
 
-// 获取所有球队
-router.get('/', async (req, res) => {
-  try {
-    const teams = await teamService.getAll()
-    res.json(teams)
-  } catch (error) {
-    res.status(500).json({ error: error.message })
-  }
-})
+// 读取
+router.get('/', requirePermission('teams:read'), ah(async (req, res) => {
+  res.json(await teamService.getAll())
+}))
 
-// 获取单个球队
-router.get('/:id', async (req, res) => {
-  try {
-    const team = await teamService.getById(req.params.id)
-    if (!team) return res.status(404).json({ error: 'Team not found' })
-    res.json(team)
-  } catch (error) {
-    res.status(500).json({ error: error.message })
-  }
-})
+router.get('/:id', requirePermission('teams:read'), ah(async (req, res) => {
+  const id = intParam(req, res, 'id'); if (!id) return
+  const team = await teamService.getById(id)
+  if (!team) return res.status(404).json({ error: '球队不存在' })
+  res.json(team)
+}))
 
-// 创建球队
-router.post('/', async (req, res) => {
-  try {
-    const { name } = req.body
-    if (!name || typeof name !== 'string' || name.trim().length === 0) {
-      return res.status(400).json({ error: '球队名称必填' })
-    }
-    const team = await teamService.create(req.body)
-    res.json(team)
-  } catch (error) {
-    res.status(500).json({ error: error.message })
+// 写入
+router.post('/', requirePermission('teams:write'), ah(async (req, res) => {
+  const { name } = req.body || {}
+  if (!name || typeof name !== 'string' || !name.trim()) {
+    return res.status(400).json({ error: '球队名称必填' })
   }
-})
+  res.status(201).json(await teamService.create(req.body))
+}))
 
-// 更新球队
-router.put('/:id', async (req, res) => {
-  try {
-    const team = await teamService.update(req.params.id, req.body)
-    res.json(team)
-  } catch (error) {
-    res.status(500).json({ error: error.message })
+router.put('/:id', requirePermission('teams:write'), ah(async (req, res) => {
+  const id = intParam(req, res, 'id'); if (!id) return
+  const { name } = req.body || {}
+  if (!name || typeof name !== 'string' || !name.trim()) {
+    return res.status(400).json({ error: '球队名称必填' })
   }
-})
+  res.json(await teamService.update(id, req.body))
+}))
 
-// 删除球队
-router.delete('/:id', async (req, res) => {
-  try {
-    await teamService.delete(req.params.id)
-    res.json({ success: true })
-  } catch (error) {
-    res.status(500).json({ error: error.message })
-  }
-})
+router.delete('/:id', requirePermission('teams:write'), ah(async (req, res) => {
+  const id = intParam(req, res, 'id'); if (!id) return
+  res.json(await teamService.delete(id))
+}))
 
 export default router

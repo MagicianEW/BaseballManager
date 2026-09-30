@@ -7,8 +7,8 @@ node_modules/
 dist/
 build/
 
-# database
-server/data/*.db
+# database & uploads（含未成年人照片，绝不能提交）
+server/data/
 
 # logs
 *.log
@@ -21,8 +21,8 @@ pnpm-debug.log*
 .env*.local
 .env
 
-# uploads
-server/public/uploads/*
+# 旧版上传目录
+server/public/uploads/
 
 # IDE
 .idea/

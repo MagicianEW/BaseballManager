@@ -1,89 +1,98 @@
-import initSqlJs from 'sql.js'
-import { readFileSync, writeFileSync } from 'fs'
+/**
+ * 数据迁移脚本
+ *
+ * v0.1.x → v0.2.0：
+ *   1. baseSituation 保持为位掩码（仅供 UI 局面图）
+ *   2. 新增 runners 列，从位掩码反推跑者数组（位掩码不含跑者身份，
+ *      playerId 只能置空，由记分员在后续打席中逐步补全）
+ *   3. confirmed 拆分为 homeConfirmed / awayConfirmed
+ *   4. 新增 finalInning / scoredRunners
+ *   5. 移除从未写入过数据的 player_stats 表
+ *
+ * 用法：npm run migrate
+ * 脚本幂等，可重复执行。
+ *
+ * 注意：此前版本此文件硬编码了开发者本机绝对路径（含用户名与目录结构），
+ * 该路径已随代码提交进仓库构成信息泄露，故改为基于 __dirname 相对解析。
+ */
 
-const SQL = await initSqlJs()
-const db = new SQL.Database(readFileSync('server/data/baseball.db'))
+import { db, all, get, run, tx } from './server/db.js'
 
-// 迁移 baseSituation: TEXT → INTEGER
-// sqlite 不支持直接 ALTER COLUMN，步骤：
-// 1. 创建新表（INTEGER 版 baseSituation）
-// 2. 复制数据（CAST）
-// 3. 删除旧表
-// 4. 重命名新表
-db.run(`
-  CREATE TABLE games_new AS
-  SELECT
-    id, date, homeTeamId, awayTeamId, homeScore, awayScore, status,
-    currentInning, currentHalf, outs, balls, strikes,
-    CAST(baseSituation AS INTEGER) as baseSituation,
-    homeLineup, awayLineup, homePitcherId, awayPitcherId,
-    createdAt, confirmed
-  FROM games
-`)
-db.run('DROP TABLE games')
-db.run('ALTER TABLE games_new RENAME TO games')
+const log = (...a) => console.log(...a)
 
-// 验证新结构
-const newCols = db.exec('PRAGMA table_info(games)')
-console.log('New games columns:')
-newCols[0].values.forEach(r => console.log(' ', r[1], r[2]))
-
-// 验证数据
-const games = db.exec('SELECT id, baseSituation, confirmed FROM games')
-console.log('\nData:')
-games[0].values.forEach(r => console.log(' ', r))
-
-writeFileSync('server/data/baseball.db', Buffer.from(db.export()))
-console.log('\nMigration done')
-
-// 验证：确认位掩码逻辑（40/40 tests）
-const FIRST_BASE = 1, SECOND_BASE = 2, THIRD_BASE = 4
-
-function updateBaseSituation(currentBitmask, hitResult) {
-  if (hitResult === '1B') {
-    let b = 0
-    if (currentBitmask & FIRST_BASE)  b |= SECOND_BASE
-    if (currentBitmask & SECOND_BASE) b |= THIRD_BASE
-    b |= FIRST_BASE
-    return b
+/** 位掩码 → 跑者数组（playerId 置空，位掩码不含身份信息） */
+const BIT_TO_BASE = { 1: 1, 2: 2, 4: 3 }
+function bitmaskToRunners(mask) {
+  const runners = []
+  for (const [bit, base] of Object.entries(BIT_TO_BASE)) {
+    if (Number(mask) & Number(bit)) runners.push({ playerId: null, base })
   }
-  if (hitResult === '2B') {
-    let b = 0
-    if (currentBitmask & SECOND_BASE) b |= THIRD_BASE
-    b |= SECOND_BASE
-    return b
-  }
-  if (hitResult === '3B') {
-    let b = THIRD_BASE
-    if (currentBitmask & FIRST_BASE)  b |= THIRD_BASE
-    if (currentBitmask & SECOND_BASE) b |= THIRD_BASE
-    return b
-  }
-  if (hitResult === 'HR') return 0
-  return currentBitmask
+  return runners
 }
 
-function advanceOnWalk(currentBitmask) {
-  let b = 0
-  if (currentBitmask & SECOND_BASE) b |= THIRD_BASE
-  if (currentBitmask & FIRST_BASE)  b |= SECOND_BASE
-  b |= FIRST_BASE
-  return b
-}
+let migrated = 0
 
-const allTests = [
-  [0,'1B',1],[1,'1B',3],[2,'1B',5],[4,'1B',1],[3,'1B',7],[5,'1B',3],[6,'1B',5],[7,'1B',7],
-  [0,'2B',2],[1,'2B',2],[2,'2B',6],[4,'2B',2],[3,'2B',6],[5,'2B',2],[6,'2B',6],[7,'2B',6],
-  [0,'3B',4],[1,'3B',4],[2,'3B',4],[4,'3B',4],[3,'3B',4],[5,'3B',4],[6,'3B',4],[7,'3B',4],
-  [0,'HR',0],[1,'HR',0],[2,'HR',0],[4,'HR',0],[3,'HR',0],[5,'HR',0],[6,'HR',0],[7,'HR',0],
-  [0,'walk',1],[1,'walk',3],[2,'walk',5],[4,'walk',1],[3,'walk',7],[5,'walk',3],[6,'walk',5],[7,'walk',7],
-]
+tx(() => {
+  // 1) runners 列
+  const gameCols = all('PRAGMA table_info(games)')
+  const hasRunners = gameCols.some(c => c.name === 'runners')
+  if (!hasRunners) {
+    run("ALTER TABLE games ADD COLUMN runners TEXT DEFAULT '[]'")
+    log('  + games.runners')
+  }
 
-let pass = 0, fail = 0
-for (const [inp, hit, exp] of allTests) {
-  const fn = hit === 'walk' ? advanceOnWalk : updateBaseSituation
-  const got = fn(inp, hit)
-  if (got === exp) { pass++ }
-  else { fail++; console.log(`FAIL base${inp}+${hit} → ${got}, expected ${exp}`) }
-}
-console.log(`\nLogic tests: ${pass}/${pass+fail} passed`)
+  // 2) confirmed 拆分
+  for (const [col, def] of [['homeConfirmed', 'INTEGER DEFAULT 0'], ['awayConfirmed', 'INTEGER DEFAULT 0']]) {
+    if (!gameCols.some(c => c.name === col)) {
+      run(`ALTER TABLE games ADD COLUMN ${col} ${def}`)
+      log(`  + games.${col}`)
+    }
+  }
+
+  // 3) finalInning
+  if (!gameCols.some(c => c.name === 'finalInning')) {
+    run('ALTER TABLE games ADD COLUMN finalInning INTEGER DEFAULT 6')
+    log('  + games.finalInning')
+  }
+
+  // 4) plate_appearances.scoredRunners
+  const paCols = all('PRAGMA table_info(plate_appearances)')
+  if (!paCols.some(c => c.name === 'scoredRunners')) {
+    run("ALTER TABLE plate_appearances ADD COLUMN scoredRunners TEXT DEFAULT '[]'")
+    log('  + plate_appearances.scoredRunners')
+  }
+
+  // 5) 位掩码 → runners
+  const games = all('SELECT id, baseSituation, runners FROM games')
+  for (const g of games) {
+    if (g.runners && g.runners !== '[]') continue   // 已有 runners，跳过
+    const runners = bitmaskToRunners(g.baseSituation || 0)
+    if (runners.length) {
+      run('UPDATE games SET runners = ? WHERE id = ?', [JSON.stringify(runners), g.id])
+      migrated++
+    }
+  }
+
+  // 6) confirmed 单数 → 双数
+  if (gameCols.some(c => c.name === 'confirmed')) {
+    const rows = all('SELECT id FROM games WHERE confirmed = 1')
+    for (const r of rows) {
+      run('UPDATE games SET homeConfirmed = 1, awayConfirmed = 1 WHERE id = ?', [r.id])
+    }
+    log(`  ~ confirmed → homeConfirmed/awayConfirmed（${rows.length} 场）`)
+  }
+
+  // 7) 移除废弃表
+  const t = get("SELECT name FROM sqlite_master WHERE type='table' AND name='player_stats'")
+  if (t) {
+    run('DROP TABLE player_stats')
+    log('  - player_stats（历史零写入，统计改从 plate_appearances 汇总）')
+  }
+})()
+
+const stats = get('SELECT COUNT(*) AS n FROM games')
+log(`\n迁移完成：${migrated} 场比赛已回填 runners，当前共 ${stats.n} 场`)
+log('提示：由位掩码回填的跑者 playerId 为 null，界面上显示为「—」，')
+log('      需在记分过程中由记分员逐步指定；比分与统计不受影响。')
+
+db.close()

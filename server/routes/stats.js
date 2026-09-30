@@ -1,36 +1,25 @@
 import express from 'express'
 import { statsService } from '../services/statsService.js'
+import { requirePermission } from '../middleware/auth.js'
+import { ah, intParam } from './helpers.js'
 
 const router = express.Router()
 
-// 获取球员统计
-router.get('/player/:id', async (req, res) => {
-  try {
-    const stats = await statsService.getPlayerStats(req.params.id)
-    res.json(stats)
-  } catch (error) {
-    res.status(500).json({ error: error.message })
-  }
-})
+router.get('/player/:id', requirePermission('stats:read'), ah(async (req, res) => {
+  const id = intParam(req, res, 'id'); if (!id) return
+  const stats = await statsService.getPlayerStats(id)
+  if (!stats) return res.status(404).json({ error: '球员不存在' })
+  res.json(stats)
+}))
 
-// 获取球队统计
-router.get('/team/:id', async (req, res) => {
-  try {
-    const stats = await statsService.getTeamStats(req.params.id)
-    res.json(stats)
-  } catch (error) {
-    res.status(500).json({ error: error.message })
-  }
-})
+router.get('/team/:id', requirePermission('stats:read'), ah(async (req, res) => {
+  const id = intParam(req, res, 'id'); if (!id) return
+  res.json(await statsService.getTeamStats(id))
+}))
 
-// 获取比赛统计
-router.get('/game/:id', async (req, res) => {
-  try {
-    const stats = await statsService.getGameStats(req.params.id)
-    res.json(stats)
-  } catch (error) {
-    res.status(500).json({ error: error.message })
-  }
-})
+router.get('/game/:id', requirePermission('stats:read'), ah(async (req, res) => {
+  const id = intParam(req, res, 'id'); if (!id) return
+  res.json(await statsService.getGameStats(id))
+}))
 
 export default router
