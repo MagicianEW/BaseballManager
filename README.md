@@ -124,6 +124,21 @@ npm run dev                                          # http://localhost:5173
 
 ### 从 v0.1.x 升级
 
+> ⚠️ **如果你之前克隆过本仓库，需要重新克隆。**
+>
+> v0.2.0 重写了 Git 历史，以清除提交记录中泄露的个人信息（内部域名邮箱、开发者本机绝对路径）。
+> 重写会改变**全部 commit hash**，因此普通的 `git pull` 会失败并报 `refusing to merge unrelated histories`。
+>
+> ```bash
+> # 方式一：重新克隆（最简单）
+> rm -rf BaseballManager && git clone https://github.com/MagicianEW/BaseballManager.git
+>
+> # 方式二：保留现有目录，强制对齐到远端
+> git fetch origin && git reset --hard origin/main
+> ```
+>
+> 已有 fork 的仓库需要重新同步。
+
 ```bash
 npm install
 npm run migrate    # 幂等：补 runners 列、拆分 confirmed、回填数据、删除废弃表
@@ -254,6 +269,23 @@ npm test
 
 ### Upgrading from v0.1.x
 
+> ⚠️ **If you cloned this repository before v0.2.0, you need to re-clone.**
+>
+> v0.2.0 rewrote Git history to remove personal information that had leaked into commit
+> metadata (an internal-domain email address and a developer's absolute local path).
+> Rewriting changes **every commit hash**, so a normal `git pull` will fail with
+> `refusing to merge unrelated histories`.
+>
+> ```bash
+> # Option 1: re-clone (simplest)
+> rm -rf BaseballManager && git clone https://github.com/MagicianEW/BaseballManager.git
+>
+> # Option 2: keep the directory, hard-reset to the rewritten history
+> git fetch origin && git reset --hard origin/main
+> ```
+>
+> Existing forks need to be re-synced.
+
 ```bash
 npm install
 npm run migrate
@@ -353,6 +385,23 @@ npm test
 ```
 
 ### v0.1.x からの移行
+
+> ⚠️ **v0.2.0 以前にクローンした場合は、再度クローンしてください。**
+>
+> v0.2.0 では、コミット情報に漏洩していた個人情報（社内ドメインのメールアドレス、
+> 開発者のローカル絶対パス）を削除するため **Git 履歴を書き換え**ました。
+> 履歴の書き換えにより **すべての commit hash が変わる**ため、通常の `git pull` は
+> `refusing to merge unrelated histories` で失敗します。
+>
+> ```bash
+> # 方法1：再クローン（最も簡単）
+> rm -rf BaseballManager && git clone https://github.com/MagicianEW/BaseballManager.git
+>
+> # 方法2：既存ディレクトリを保持し、書き換え済み履歴へ強制的に合わせる
+> git fetch origin && git reset --hard origin/main
+> ```
+>
+> 既存の fork は再同期が必要です。
 
 ```bash
 npm install
