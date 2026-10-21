@@ -5,7 +5,11 @@ import AuthImage from './AuthImage'
 
 /**
  * 导航栏组件
+ *
+ * 响应式说明：链接数量增加后，窄屏下菜单项会被逐字竖排挤爆。
+ * 因此链接区允许横向滚动、链接本身不换行，用户名在窄屏隐藏。
  */
+
 function Navbar() {
   const { user, logout } = useAuth()
   const { clubLogo, clubName, t } = useApp()
@@ -30,34 +34,37 @@ function Navbar() {
     cyan: 'bg-cyan-700 hover:bg-cyan-600',
   }
 
-
   return (
     <nav className={`${themeClasses[theme] || themeClasses.green} text-white shadow-lg`}>
       <div className="container mx-auto px-4">
-        <div className="flex items-center justify-between h-16">
-          <div className="flex items-center gap-8">
-            <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between gap-4 h-16">
+          <div className="flex items-center gap-4 min-w-0">
+            <div className="flex items-center gap-2 shrink-0">
               {clubLogo && (
-                <AuthImage src={clubLogo} alt="Club" className="w-10 h-10 object-contain" />
+                <AuthImage src={clubLogo} alt="Club" className="w-9 h-9 object-contain" />
               )}
-              <h1 className="text-xl font-bold">{clubLogo ? '' : '⚾'} {t('appName')}</h1>
+              <h1 className="text-lg font-bold whitespace-nowrap">
+                {clubLogo ? '' : '⚾'} {clubLogo ? clubName : t('appName')}
+              </h1>
             </div>
-            <div className="flex gap-6">
+            {/* 链接区：窄屏可横向滚动，避免文字被逐字竖排 */}
+            <div className="flex gap-1 overflow-x-auto min-w-0 scrollbar-none">
               <NavLink to="/">{t('teams')}</NavLink>
               <NavLink to="/squads">{t('squads')}</NavLink>
               <NavLink to="/players">{t('players')}</NavLink>
               <NavLink to="/games">{t('games')}</NavLink>
               <NavLink to="/stats">{t('stats')}</NavLink>
+              <NavLink to="/help">{t('helpTitle')}</NavLink>
               {user.role === 'admin' && <NavLink to="/settings">{t('users')}</NavLink>}
             </div>
           </div>
-          <div className="flex items-center gap-4">
-            <span className="text-sm">
+          <div className="flex items-center gap-3 shrink-0">
+            <span className="text-sm whitespace-nowrap hidden sm:inline">
               {user.username} ({t(user.role)})
             </span>
             <button
               onClick={handleLogout}
-              className="bg-green-700 hover:bg-green-600 px-3 py-1 rounded text-sm"
+              className="bg-black/20 hover:bg-black/30 px-3 py-1 rounded text-sm whitespace-nowrap"
             >
               {t('logout')}
             </button>
@@ -75,7 +82,7 @@ function NavLink({ to, children }) {
   return (
     <Link
       to={to}
-      className="text-white hover:text-green-200 transition-colors font-medium px-3 py-2 rounded-md hover:bg-green-700"
+      className="text-white hover:text-green-200 transition-colors font-medium px-3 py-2 rounded-md hover:bg-black/15 whitespace-nowrap shrink-0"
     >
       {children}
     </Link>

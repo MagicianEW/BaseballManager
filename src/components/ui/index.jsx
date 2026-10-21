@@ -8,9 +8,10 @@ import React from 'react'
  */
 
 /** 卡片容器 */
-export function Panel({ title, subtitle, actions, children, className = '', dense = false }) {
+export function Panel({ title, subtitle, actions, children, className = '', dense = false, id, ...rest }) {
   return (
-    <section className={`bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden ${className}`}>
+    <section id={id} {...rest}
+      className={`bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden ${className}`}>
       {(title || actions) && (
         <header className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white">
           <div>

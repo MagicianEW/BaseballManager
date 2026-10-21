@@ -40,8 +40,12 @@ U10 用野球チーム管理ツール — 試合記録、打線管理、代打�
 **实时同步**
 - Socket.IO 事件广播，多端实时刷新
 
+**使用帮助**
+- 内置完整的操作指南页（`/help`），含快速上手、角色权限、页面导览、记分操作详解、统计指标速查、比赛规则速查、数据与隐私、常见问题
+- 四语言内容结构完全一致，页内可锚点跳转
+
 **多语言**
-- 简体中文、繁体中文、英语、日语，171 个 key 四语言全覆盖
+- 简体中文、繁体中文、英语、日语，347 个 key 四语言全覆盖
 
 ### 技术栈
 
@@ -170,6 +174,19 @@ npm run migrate    # 幂等：补 runners 列、拆分 confirmed、回填数据�
 
 ### 版本历史
 
+#### v0.3.1
+
+新增使用帮助页。
+
+- 新增 `/help` 帮助页，8 个章节共 59 条内容：快速上手、角色权限、页面导览、记分操作详解、统计指标速查、比赛规则速查、数据与隐私、常见问题
+- 帮助内容采用结构化数据存放在 `src/i18n/help.js`，四种语言结构完全一致；页内可锚点跳转
+- 修复导航栏在窄屏下菜单文字被逐字竖排挤爆的问题（链接区改为可横向滚动 + `whitespace-nowrap`）
+- 修复主题色名称硬编码中文的问题（`THEMES` 改为 i18n key，4 语言各 8 个颜色名）
+- 翻译表主表抽离到 `src/i18n/base.js`，合并入口统一为 `src/i18n/index.js`
+  —— 此前校验脚本自己重建了一份合并表，与应用运行时用的不是同一份，存在盲区
+- i18n 校验脚本增强：改为引用真实合并表、新增嵌套结构一致性校验、新增动态 key 登记（`t(变量)` 形式）
+- `t()` 增加类型防御：解析到非字符串（结构化内容）时返回 key，不会把对象渲染进 JSX
+
 #### v0.3.0
 
 补齐 MLB 统计指标与 U10 比赛规则，��写统计页与记分页。
@@ -289,6 +306,8 @@ npm test
 
 **Realtime** — Socket.IO broadcast to all clients.
 
+**Help** — a built-in guide at `/help`: quick start, roles & permissions, page guide, scoring walkthrough, metrics reference, game rules, data & privacy, and FAQ. Fully translated in all four languages with in-page anchors.
+
 **i18n** — Simplified Chinese, Traditional Chinese, English, Japanese.
 
 ### Stack
@@ -385,6 +404,19 @@ npm run migrate
 
 ### Changelog
 
+#### v0.3.1
+
+Adds a built-in help page.
+
+- New `/help` page: 8 sections, 59 items — quick start, roles & permissions, page guide, scoring walkthrough, metrics reference, game rules, data & privacy, FAQ
+- Help content lives as structured data in `src/i18n/help.js`, identical in shape across all four languages, with in-page anchors
+- Fixed the navbar collapsing into one-character-per-line on narrow screens (link row is now horizontally scrollable and never wraps)
+- Fixed hardcoded Chinese theme colour names (`THEMES` now uses i18n keys, 8 colours × 4 languages)
+- Extracted the base translation table to `src/i18n/base.js` with a single merge entry point at `src/i18n/index.js`
+  — the checker previously rebuilt its own merged table, so it was not validating what the app actually used
+- Hardened the i18n checker: uses the real merged table, now also verifies nested structure and registers dynamic (`t(variable)`) keys
+- `t()` now returns the key instead of an object when the resolved value is not a string
+
 #### v0.3.0
 
 Adds MLB-grade statistics and U10 game rules, and rebuilds the stats and scoring pages.
@@ -479,7 +511,9 @@ Core framework, substitution system, lineup confirmation, bitmask scoring fixes.
 
 **リアルタイム** — Socket.IO で全クライアントに即時反映。
 
-**多言語** — 简体中文・繁体中文・英語・日本語（171 キーすべて翻訳済み）。
+**ヘルプ** — `/help` に完全な操作ガイドを内蔵。クイックスタート、権限、ページ案内、スコア入力の詳細、指標一覧、試合ルール、データとプライバシー、よくある質問の8章構成。4言語すべて同じ構造で、アンカーで移動できます。
+
+**多言語** — 简体中文・繁体中文・英語・日本語（347 キーすべて翻訳済み）。
 
 ### 技術スタック
 
@@ -571,6 +605,19 @@ npm run migrate
 ```
 
 ### 変更履歴
+
+#### v0.3.1
+
+ヘルプページを追加。
+
+- `/help` ヘルプページ（8 章 59 項目）：クイックスタート、権限、ページ案内、スコア入力の詳細、指標一覧、試合ルール、データとプライバシー、よくある質問
+- ヘルプ内容は `src/i18n/help.js` の構造化データ。4言語で同じ構造、アンカーで移動可能
+- 狭い画面でナビの項目が1文字ずつ縦積みに崩れる問題を修正（横スクロール + `whitespace-nowrap`）
+- テーマ色名が中文ハードコードだった問題を修正（`THEMES` を i18n キーに変更、4言語 × 8色）
+- 基底翻訳表を `src/i18n/base.js` に分離し、統合口を `src/i18n/index.js` に一本化
+  — 従来は検証スクリプトが独自の統合表を再構築しており、アプリ本体と同一のものを検証していませんでした
+- i18n 検証スクリプトを強化：実際の統合表を参照、ネスト構造の一致検証、動的キー（`t(変数)`）の登録を追加
+- `t()` に型ガードを追加。文字列以外（構造化データ）の場合は key を返すように
 
 #### v0.3.0
 

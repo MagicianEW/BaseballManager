@@ -8,6 +8,7 @@ import Stats from './pages/Stats'
 import GameLive from './pages/GameLive'
 import Squads from './pages/Squads'
 import Settings from './pages/Settings'
+import Help from './pages/Help'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import ErrorBoundary from './components/ErrorBoundary'
@@ -56,6 +57,9 @@ function App() {
                   {/* 仅管理员 */}
                   <Route path="/settings" element={
                     <RequireAdmin><Settings /></RequireAdmin>
+                  } />
+                  <Route path="/help" element={
+                    <RequireAuth><Help /></RequireAuth>
                   } />
                 </Routes>
               </main>

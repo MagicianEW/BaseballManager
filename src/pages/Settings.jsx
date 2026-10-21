@@ -150,7 +150,7 @@ function Settings() {
               className={`w-12 h-12 rounded-full ${value.primary} ${
                 theme === key ? 'ring-4 ring-offset-2 ring-gray-400' : ''
               }`}
-              title={value.name}
+              title={t(value.name)}
             />
           ))}
         </div>

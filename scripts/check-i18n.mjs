@@ -44,38 +44,21 @@ for (const file of files) {
   }
 }
 
-// --- 加载翻译表 ---
-const { ALL_TRANSLATIONS } = await import(
-  path.join(srcDir, 'context/AppContext.jsx')
-).catch(async () => {
-  // AppContext.jsx 是 JSX，无法直接 import；改用 AppContext 里导出的纯 JS 分片
-  const { mergeTranslations } = await import(path.join(srcDir, 'i18n/merge.js'))
-  const slices = await Promise.all(
-    ['stats', 'gameLive', 'games'].map(n => import(path.join(srcDir, `i18n/${n}.js`)))
-  )
-  const base = {}
-  const src = readFileSync(path.join(srcDir, 'context/AppContext.jsx'), 'utf-8')
-  for (const lang of LANGS) {
-    const body = src.split(`'${lang}': {`)[1]?.split('\n  },\n')[0] || ''
-    const obj = {}
-    // 主表中部分值用双引号（如 en 的 noAccount: "Don't have an account?"），
-    // 正则必须同时支持单双引号，否则会误判为「缺少翻译」
-    for (const m of body.matchAll(/^    (\w+):\s*(?:'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)")/gm)) {
-      const val = m[2] !== undefined ? m[2] : m[3]
-      obj[m[1]] = val.replace(/\\'/g, "'").replace(/\\"/g, '"').replace(/\\\\/g, '\\')
-    }
-    base[lang] = obj
-  }
-  return {
-    ALL_TRANSLATIONS: mergeTranslations(
-      base,
-      slices[0].statsI18n, slices[1].gameLiveI18n, slices[2].gamesI18n,
-    ),
-  }
-})
+// --- 加载翻译表（与应用运行时引用同一份）---
+const { ALL_TRANSLATIONS } = await import(path.join(srcDir, 'i18n/index.js'))
 
 const ALL = ALL_TRANSLATIONS || {}
 let errors = 0
+
+// 动态 key：t(变量) 形式，静态扫描抓不到，需显式登记
+// 例如 Settings.jsx 的 t(value.name)，value.name 取自 THEMES[].name
+const DYNAMIC_KEYS = [
+  'theme_green', 'theme_blue', 'theme_red', 'theme_purple',
+  'theme_orange', 'theme_yellow', 'theme_indigo', 'theme_cyan',
+]
+for (const k of DYNAMIC_KEYS) {
+  if (!usedKeys.has(k)) usedKeys.set(k, ['<dynamic>'])
+}
 
 // --- 1. 用到的 key 必须都能解析 ---
 console.log('检查代码中使用的 i18n key…')
@@ -107,14 +90,45 @@ if (!mismatch) {
   console.log(`  ✅ 四语言各 ${baseSet.size} 个 key，集合完全一致`)
 }
 
-// --- 3. 未使用的 key（仅提示，不算错误）---
+// --- 3. 嵌套结构一致性（帮助页等内容是结构化对象，需逐层比对）---
+console.log('检查嵌套结构一致性…')
+function shapeOf(v) {
+  if (Array.isArray(v)) {
+    return v.length ? [shapeOf(v[0])] : []
+  }
+  if (v && typeof v === 'object') {
+    const out = {}
+    for (const k of Object.keys(v).sort()) out[k] = shapeOf(v[k])
+    return out
+  }
+  return typeof v
+}
+let deepBad = 0
+for (const [name, mod] of Object.entries({
+  stats: (await import(path.join(srcDir, 'i18n/stats.js'))).statsI18n,
+  gameLive: (await import(path.join(srcDir, 'i18n/gameLive.js'))).gameLiveI18n,
+  games: (await import(path.join(srcDir, 'i18n/games.js'))).gamesI18n,
+  help: (await import(path.join(srcDir, 'i18n/help.js'))).helpI18n,
+})) {
+  const ref = JSON.stringify(shapeOf(mod['zh-CN']))
+  for (const lang of LANGS) {
+    const cur = JSON.stringify(shapeOf(mod[lang]))
+    if (cur !== ref) {
+      console.error(`  ❌ ${name} [${lang}] 嵌套结构与 zh-CN 不一致`)
+      deepBad++
+    }
+  }
+}
+if (!deepBad) console.log('  ✅ 所有分片的嵌套结构在四语言下完全一致')
+
+// --- 4. 未使用的 key（仅提示，不算错误）---
 const unused = [...baseSet].filter(k => !usedKeys.has(k))
 if (unused.length) {
   console.log(`  ℹ️  主表中有 ${unused.length} 个 key 当前未被使用（可能是历史遗留，不影响运行）`)
 }
 
-if (errors || mismatch) {
-  console.error(`\n❌ i18n 校验未通过：${errors} 个缺失翻译, ${mismatch} 个语言不一致`)
+if (errors || mismatch || deepBad) {
+  console.error(`\n❌ i18n 校验未通过：${errors} 个缺失翻译, ${mismatch} 个语言不一致, ${deepBad} 个结构不一致`)
   process.exit(1)
 }
 console.log('\n✅ i18n 校验通过')
