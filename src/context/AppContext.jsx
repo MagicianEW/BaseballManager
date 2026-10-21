@@ -1,5 +1,9 @@
 import React, { createContext, useContext, useReducer, useCallback, useState, useEffect } from 'react'
 import { api } from '../utils/api'
+import { mergeTranslations } from '../i18n/merge'
+import { statsI18n } from '../i18n/stats'
+import { gameLiveI18n } from '../i18n/gameLive'
+import { gamesI18n } from '../i18n/games'
 
 const AppContext = createContext(null)
 
@@ -800,6 +804,12 @@ function reducer(state, action) {
   }
 }
 
+// 页面级翻译分片合并（主表优先，分片补缺）
+// 这样各页面可以独立维护文案，避免多人同时改动这个大文件
+export const ALL_TRANSLATIONS = mergeTranslations(
+  translations, statsI18n, gameLiveI18n, gamesI18n
+)
+
 export function AppProvider({ children }) {
   const [state, dispatch] = useReducer(reducer, initialState)
 
@@ -922,8 +932,8 @@ export function AppProvider({ children }) {
   // t('battingOrderSlot', { order: 3 }) -> '第3棒'
   // 此前不支持插值，翻译表里的 {order} / {playerName} 等占位符会原样显示
   const t = useCallback((key, params) => {
-    const raw = translations[state.language]?.[key]
-      ?? translations['zh-CN'][key]
+    const raw = ALL_TRANSLATIONS[state.language]?.[key]
+      ?? ALL_TRANSLATIONS['zh-CN'][key]
       ?? key
     if (!params) return raw
     return raw.replace(/\{(\w+)\}/g, (m, name) =>

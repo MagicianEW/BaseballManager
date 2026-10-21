@@ -24,7 +24,7 @@ const UPDATABLE_COLUMNS = new Set([
   'date', 'homeTeamId', 'awayTeamId', 'homeScore', 'awayScore', 'status',
   'currentInning', 'currentHalf', 'outs', 'balls', 'strikes',
   'homeLineup', 'awayLineup', 'homePitcherId', 'awayPitcherId',
-  'homeConfirmed', 'awayConfirmed', 'finalInning',
+  'homeConfirmed', 'awayConfirmed', 'finalInning', 'runLimit',
 ])
 
 const parseJSON = (v, fallback) => {
@@ -34,15 +34,27 @@ const parseJSON = (v, fallback) => {
 /**
  * 推进局数 / 出局 / 比分。
  * 仅由 addPlateAppearance 在事务内调用。
+ *
+ * @param data 本打席提交的原始数据（用于读取 pitches 计算球数）
  */
-function advanceGameState(game, play, half) {
+function advanceGameState(game, play, half, data = {}) {
   const scoringHalf = half === 'bottom' ? 'home' : 'away'
   let outs = (game.outs || 0) + play.outs
   let inning = game.currentInning
   let curHalf = game.currentHalf
   const finalInning = game.finalInning || 6
 
-  if (outs >= 3) {
+  // U10 常见规则：每局得分上限（如 5 分），达到即换半局。
+  // 本半局得分从打席记录实时汇总（当前打席已插入，因此已包含本次得分）。
+  const runLimit = game.runLimit || 0
+  const runsThisHalf = get(
+    `SELECT COALESCE(SUM(runsScored), 0) AS n FROM plate_appearances
+     WHERE gameId = ? AND inning = ? AND half = ?`,
+    [game.id, inning, curHalf]
+  ).n
+  const hitRunLimit = runLimit > 0 && runsThisHalf >= runLimit
+
+  if (outs >= 3 || hitRunLimit) {
     outs = 0
     if (curHalf === 'top') {
       curHalf = 'bottom'                    // 上半结束 → 下半
@@ -52,24 +64,39 @@ function advanceGameState(game, play, half) {
     }
   }
 
+  // 宽恕规则：领先 10 分且已过 4 局（或 15 分过 3 局）时结束比赛
+  const homeScore = (game.homeScore || 0) + (scoringHalf === 'home' ? play.runs.length : 0)
+  const awayScore = (game.awayScore || 0) + (scoringHalf === 'away' ? play.runs.length : 0)
+  const lead = Math.abs(homeScore - awayScore)
+  const mercyThreshold = inning >= 5 ? 8 : inning >= 4 ? 10 : 15
+  const mercyApplies = inning >= 3 && lead >= mercyThreshold
+
   // 打满最终局下半即比赛结束（此时已换到下一局上半，需要回退）
   let status = game.status
   if (game.status === 'in_progress' && curHalf === 'top' && inning > finalInning) {
     status = 'completed'
     inning = finalInning
     curHalf = 'bottom'
+  } else if (mercyApplies && game.status === 'in_progress') {
+    status = 'completed'
   }
 
-  const homeScore = (game.homeScore || 0) + (scoringHalf === 'home' ? play.runs.length : 0)
-  const awayScore = (game.awayScore || 0) + (scoringHalf === 'away' ? play.runs.length : 0)
+  // 球数/好球：属于「当前打者」的计数。
+  // 一个打席刚结束，下一位打者从 0-0 重新开始，因此这里归零；
+  // 打席进行中的实时计数由前端投球计数条维护并显示。
+  const balls = 0
+  const strikes = 0
 
-  run(`UPDATE games SET runners = ?, baseSituation = ?, outs = ?, balls = 0, strikes = 0,
+  run(`UPDATE games SET runners = ?, baseSituation = ?, outs = ?, balls = ?, strikes = ?,
        currentInning = ?, currentHalf = ?, homeScore = ?, awayScore = ?, status = ?
      WHERE id = ?`,
-    [JSON.stringify(play.runners), toBitmask(play.runners), outs, inning, curHalf,
+    [JSON.stringify(play.runners), toBitmask(play.runners), outs, balls, strikes, inning, curHalf,
      homeScore, awayScore, status, game.id])
 
-  return { runners: play.runners, outs, inning, curHalf, homeScore, awayScore, status }
+  return {
+    runners: play.runners, outs, inning, curHalf, homeScore, awayScore, status,
+    balls, strikes, runLimitHit: hitRunLimit, mercyRule: mercyApplies,
+  }
 }
 
 export const gameService = {
@@ -103,7 +130,11 @@ export const gameService = {
       runners: parseJSON(game.runners, []),
       homeLineup: parseJSON(game.homeLineup, []),
       awayLineup: parseJSON(game.awayLineup, []),
-      plateAppearances: pa.map(p => ({ ...p, scoredRunners: parseJSON(p.scoredRunners, []) })),
+      plateAppearances: pa.map(p => ({
+        ...p,
+        scoredRunners: parseJSON(p.scoredRunners, []),
+        pitches: parseJSON(p.pitches, []),      // 投球序列需解析成数组，否则前端拿到的是 JSON 字符串
+      })),
     }
   },
 
@@ -180,6 +211,7 @@ export const gameService = {
       const half = data.half || game.currentHalf
       const inning = data.inning || game.currentInning
       const runners = parseJSON(game.runners, [])
+      const pitches = Array.isArray(data.pitches) ? data.pitches : []
 
       // 未知结果码（SB/CS 等跑垒动作）原样记录，不改变局面
       const play = resolvePlay(runners, data.batterId, result)
@@ -189,7 +221,7 @@ export const gameService = {
             (gameId, inning, half, paNumber, batterId, pitcherId, result, pitches, notes)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [gameId, inning, half, data.paNumber, data.batterId, data.pitcherId,
-           result, JSON.stringify(data.pitches || []), data.notes || null]).lastInsertRowid
+           result, JSON.stringify(pitches), data.notes || null]).lastInsertRowid
         return { id: Number(id), gameId, ...data, runs: 0, rbi: 0, runsScored: 0 }
       }
 
@@ -204,9 +236,9 @@ export const gameService = {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [gameId, inning, half, data.paNumber, data.batterId, data.pitcherId, result,
          rbi, runsScored, JSON.stringify(play.runs),
-         JSON.stringify(data.pitches || []), data.notes || null]).lastInsertRowid
+         JSON.stringify(pitches), data.notes || null]).lastInsertRowid
 
-      const next = advanceGameState(game, play, half)
+      const next = advanceGameState(game, play, half, data)
 
       return {
         id: Number(paId),

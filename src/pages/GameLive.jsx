@@ -5,15 +5,19 @@ import { onSocket } from '../utils/socket'
 import { useApp } from '../context/AppContext'
 import { useAuth } from '../context/AuthContext'
 import { RESULT_LABELS, RESULT_CATEGORIES } from '../constants/baseball'
-import { LineupPrintCard } from '../components/LineupPrintCard'
+import { PageHeader, Panel, StatBadge, StatRow, StatTable, BoxScore, EmptyState, Button } from '../components/ui'
 
-// 快速模式只显示常用结果
+/**
+ * 实时记分页
+ *
+ * 关键设计：比分、出局、垒上局面、球数好球全部由服务端计分引擎计算，
+ * 前端只提交「打席事实」（打者、投手、结果、投球序列），不自行推算局面。
+ * 此前前后端各算一遍再互相覆盖，是双重真相。
+ */
+
 const QUICK_RESULTS = ['HR', 'SO', 'BB', 'GO', 'FO', '1B']
-
-// 完整模式下排除跑垒动作与已单列的结果
 const EXCLUDE_FROM_PANEL = ['SB', 'CS', 'PK', 'WP', 'BALK', 'PB', 'E', 'IBB']
-
-const BASE_POS = { 1: [100, 30], 2: [170, 100], 3: [100, 170] }
+const BASE_POS = { 1: [160, 165], 2: [100, 100], 3: [40, 35] }
 
 function GameLive() {
   const { id } = useParams()
@@ -22,20 +26,24 @@ function GameLive() {
 
   const [game, setGame] = useState(null)
   const [players, setPlayers] = useState([])
+  const [boxStats, setBoxStats] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [flash, setFlash] = useState(null)
   const [busy, setBusy] = useState(false)
   const [quickMode, setQuickMode] = useState(() => localStorage.getItem('quickMode') !== 'false')
   const [showSubs, setShowSubs] = useState(false)
-  const [showPrint, setShowPrint] = useState(false)
   const [subs, setSubs] = useState([])
+  const [pitches, setPitches] = useState([])
 
   const loadGame = useCallback(async () => {
     try {
       setError(null)
       const g = await api.getGame(id)
       setGame(g)
+      if (g?.status === 'in_progress' || g?.status === 'completed') {
+        api.getGameStats(id).then(setBoxStats).catch(() => {})
+      }
     } catch (err) {
       setError(err.message || t('loadFailed'))
     } finally {
@@ -49,7 +57,7 @@ function GameLive() {
     api.getPlayers().then(setPlayers).catch(() => {})
   }, [loadGame])
 
-  // 实时同步：此前靠 2 秒轮询且每次重拉全量球员，后端 socket 事件完全没接
+  // 实时同步（替换此前的 2 秒轮询）
   useEffect(() => {
     const off = onSocket('game:updated', payload => {
       if (String(payload?.gameId) === String(id)) loadGame()
@@ -74,8 +82,7 @@ function GameLive() {
     return p ? `${p.number ?? ''} ${p.name}`.trim() : `#${pid}`
   }, [playerMap])
 
-  // 下一位打者：按当前半局已有打席数在打线中轮转。
-  // 此前用 paCount % 9 硬编码 9 人，且被 status === 'in_progress' 卡住（服务端从不写该状态）
+  // 下一位打者：按当前半局已有打席数在打线中轮转
   const currentBatter = useMemo(() => {
     if (!game) return null
     const lineup = game.currentHalf === 'top' ? game.awayLineup : game.homeLineup
@@ -94,13 +101,36 @@ function GameLive() {
 
   const runners = game?.runners || []
 
+  // 投球计数：好球满 2 后界外不再加好球
+  const pitchCounts = useMemo(() => {
+    let balls = 0, strikes = 0
+    for (const p of pitches) {
+      if (p === 'B') balls++
+      else if (p === 'S') strikes++
+      else if (p === 'F') { if (strikes < 2) strikes++ }
+    }
+    return { balls, strikes }
+  }, [pitches])
+
+  const addPitch = kind => {
+    setPitches(p => {
+      const next = [...p, kind]
+      const b = next.filter(x => x === 'B').length
+      const s = next.filter(x => x === 'S').length
+      const f = next.filter(x => x === 'F').length
+      if (b >= 4) return next   // 4 坏球 → 记为保送结果
+      if (s + Math.min(f, 2) >= 3) return next
+      return next
+    })
+  }
+
   const record = useCallback(async (result) => {
     if (!game || busy) return
     setBusy(true)
     try {
       const paCount = (game.plateAppearances || [])
         .filter(pa => pa.half === game.currentHalf && pa.inning === game.currentInning).length
-      // 只发送打席事实，得分/RBI/局数推进全部由服务端计分引擎计算
+      // 只发事实：局面与比分由服务端计分引擎计算
       const res = await api.games.addPlateAppearance(game.id, {
         inning: game.currentInning,
         half: game.currentHalf,
@@ -108,7 +138,9 @@ function GameLive() {
         batterId: currentBatter,
         pitcherId: currentPitcher,
         result,
+        pitches: [...pitches, 'X'],
       })
+      setPitches([])
       if (res?.runs > 0) {
         setFlash(t('runsScoredFlash', { n: res.runs }))
         setTimeout(() => setFlash(null), 2500)
@@ -120,7 +152,7 @@ function GameLive() {
     } finally {
       setBusy(false)
     }
-  }, [game, currentBatter, currentPitcher, busy, loadGame, t])
+  }, [game, currentBatter, currentPitcher, busy, loadGame, pitches, t])
 
   const endHalf = useCallback(async () => {
     if (!window.confirm(t('confirmEndHalf'))) return
@@ -145,20 +177,6 @@ function GameLive() {
     })
   }
 
-  const doConfirmLineup = useCallback(async (team) => {
-    try {
-      await api.games.confirmLineup(game.id, team)
-      await loadGame()
-    } catch (err) { setError(err.message) }
-  }, [game, loadGame])
-
-  const reopenLineup = useCallback(async (team) => {
-    try {
-      await api.games.reopenLineup(game.id, team)
-      await loadGame()
-    } catch (err) { setError(err.message) }
-  }, [game, loadGame])
-
   const allResults = useMemo(
     () => Object.entries(RESULT_LABELS)
       .filter(([key]) => !EXCLUDE_FROM_PANEL.includes(key))
@@ -167,234 +185,261 @@ function GameLive() {
   )
   const panelResults = quickMode ? allResults.filter(r => QUICK_RESULTS.includes(r.value)) : allResults
 
-  if (loading) return <div className="p-8 text-center">{t('loadFailed')}…</div>
-  if (error && !game) return <div className="p-8 text-center text-red-600">{error}</div>
-  if (!game) return <div className="p-8 text-center">{t('gameNotFound')}</div>
+  const toneFor = result => {
+    if (RESULT_CATEGORIES.outs.items.includes(result)) return 'bg-gray-700 hover:bg-gray-600'
+    if (RESULT_CATEGORIES.walks.items.includes(result)) return 'bg-amber-600 hover:bg-amber-500'
+    if (result === 'HR') return 'bg-rose-700 hover:bg-rose-600'
+    return 'bg-green-800 hover:bg-green-700'
+  }
+
+  if (loading) return <div className="p-10 text-center text-gray-400">{t('loading')}</div>
+  if (error && !game) return <div className="p-10 text-center text-rose-600">{error}</div>
+  if (!game) return <EmptyState icon="⚾" title={t('gameNotFound')} />
 
   const isLive = game.status === 'in_progress'
   const isDone = game.status === 'completed'
   const writable = canWrite('games') && isLive
+  const halfLabel = t(game.currentHalf === 'top' ? 'topHalf' : 'bottomHalf')
 
   return (
     <div className="max-w-6xl mx-auto">
-      <div className="flex justify-between items-center mb-4">
-        <h1 className="text-2xl font-bold">
-          {game.awayTeamName} <span className="text-gray-400">vs</span> {game.homeTeamName}
-        </h1>
-        <Link to="/games" className="text-blue-600">← {t('backToList')}</Link>
-      </div>
+      <PageHeader
+        title={`${game.awayTeamName} vs ${game.homeTeamName}`}
+        subtitle={game.date}
+        actions={<Link to="/games" className="text-sm text-blue-700 hover:underline">← {t('backToList')}</Link>}
+      />
 
       {!isLive && !isDone && (
-        <div className="bg-yellow-100 border border-yellow-300 text-yellow-800 rounded p-3 mb-4">
+        <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-3 mb-4 text-sm">
           {t('notStartedHint')}
         </div>
       )}
       {isDone && (
-        <div className="bg-green-100 border border-green-300 text-green-800 rounded p-3 mb-4">
-          {t('completed')}
+        <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl p-3 mb-4 text-sm font-semibold">
+          {t('statusCompleted')}
         </div>
       )}
-      {flash && <div className="bg-green-600 text-white rounded p-3 mb-4 text-center font-bold">{flash}</div>}
-      {error && <div className="bg-red-100 border border-red-300 text-red-700 rounded p-3 mb-4">{error}</div>}
+      {flash && (
+        <div className="bg-emerald-600 text-white rounded-xl p-3 mb-4 text-center font-bold shadow">
+          {flash}
+        </div>
+      )}
+      {error && (
+        <div className="bg-rose-50 border border-rose-200 text-rose-700 rounded-xl p-3 mb-4 text-sm">{error}</div>
+      )}
 
-      {/* 比分板 */}
-      <div className="bg-white rounded shadow p-4 mb-4">
+      {/* 比分板 —— 记分员最常看的地方，做成强对比的大号显示 */}
+      <div className="bg-gradient-to-br from-slate-800 to-slate-900 text-white rounded-xl shadow-lg p-5 mb-4">
         <div className="flex justify-between items-center text-center">
           <div className="flex-1">
-            <div className="text-3xl font-bold">{game.awayScore}</div>
-            <div className="text-gray-600">{game.awayTeamName}</div>
+            <div className="text-5xl font-black tabular-nums leading-none">{game.awayScore}</div>
+            <div className="text-sm text-slate-300 mt-1.5 truncate">{game.awayTeamName}</div>
           </div>
-          <div className="px-8">
-            <div className="text-2xl font-bold text-gray-400">
-              {t('inningOf', { inning: game.currentInning, half: t(game.currentHalf === 'top' ? 'topHalf' : 'bottomHalf') })}
+          <div className="px-4">
+            <div className="text-xl font-bold text-slate-200 whitespace-nowrap">
+              {t('inningShort', { inning: game.currentInning, half: halfLabel })}
             </div>
-            <div className="text-sm text-gray-500">/ {game.finalInning}</div>
+            <div className="text-[11px] text-slate-400 mt-1">/ {game.finalInning} {t('inningCol')}</div>
           </div>
           <div className="flex-1">
-            <div className="text-3xl font-bold">{game.homeScore}</div>
-            <div className="text-gray-600">{game.homeTeamName}</div>
+            <div className="text-5xl font-black tabular-nums leading-none">{game.homeScore}</div>
+            <div className="text-sm text-slate-300 mt-1.5 truncate">{game.homeTeamName}</div>
           </div>
         </div>
-        <div className="flex justify-center gap-8 mt-4">
+        <div className="flex items-center justify-center gap-6 mt-4 pt-4 border-t border-slate-700">
           <div className="flex items-center gap-2">
-            <span>{t('outs')}:</span>
+            <span className="text-xs text-slate-400">{t('outs')}</span>
             {[1, 2, 3].map(n => (
               <span key={n}
-                className={`w-6 h-6 rounded-full ${game.outs >= n ? 'bg-red-500' : 'bg-gray-300'}`} />
+                className={`w-5 h-5 rounded-full border border-slate-600 ${game.outs >= n ? 'bg-rose-500' : 'bg-slate-700'}`} />
             ))}
           </div>
-          <div className="flex items-center gap-2 text-sm">
-            <span>{t('balls')}: {game.balls || 0}</span>
-            <span>{t('strikes')}: {game.strikes || 0}</span>
+          <div className="flex items-center gap-3 text-sm tabular-nums">
+            <span><span className="text-slate-400 text-xs">{t('balls')}</span> {pitchCounts.balls}</span>
+            <span><span className="text-slate-400 text-xs">{t('strikes')}</span> {pitchCounts.strikes}</span>
           </div>
         </div>
       </div>
 
-      {/* 垒上局面 */}
-      <div className="bg-white rounded shadow p-4 mb-4">
-        <h2 className="text-lg font-bold mb-4 text-center">{t('baseState')}</h2>
-        <div className="flex justify-center">
-          <svg width="220" height="220" viewBox="0 0 200 200">
-            {[1, 2, 3].map(base => {
-              const occupant = runners.find(r => r.base === base)
-              const [cx, cy] = BASE_POS[base]
-              return (
-                <polygon
-                  key={base}
-                  points={`${cx},${cy - 15} ${cx + 15},${cy} ${cx},${cy + 15} ${cx - 15},${cy}`}
-                  fill={occupant ? '#dc2626' : '#fff'}
-                  stroke="#000" strokeWidth="2" />
-              )
-            })}
-            <circle cx="100" cy="100" r="10" fill="#e5e7eb" stroke="#000" strokeWidth="2" />
-          </svg>
-        </div>
-        <div className="text-center mt-3 text-sm">
-          {runners.length === 0
-            ? <span className="text-gray-500">{t('basesEmpty')}</span>
-            : runners.map(r => (
-                <span key={r.playerId ?? r.base}
-                  className="inline-block mr-2 px-2 py-1 rounded bg-red-50 text-red-700">
+      <div className="grid gap-4 lg:grid-cols-2 mb-4">
+        {/* 垒上局面 */}
+        <Panel title={t('baseState')}>
+          <div className="flex justify-center">
+            <svg width="220" height="200" viewBox="0 0 200 200">
+              {/* 标准菱形：本垒左下、一垒右下、二垒右上、三垒左上 */}
+              {[1, 2, 3].map(base => {
+                const occupant = runners.find(r => r.base === base)
+                const [cx, cy] = BASE_POS[base]
+                return (
+                  <polygon
+                    key={base}
+                    points={`${cx},${cy - 13} ${cx + 13},${cy} ${cx},${cy + 13} ${cx - 13},${cy}`}
+                    fill={occupant ? '#dc2626' : '#f1f5f9'}
+                    stroke="#334155" strokeWidth="2" />
+                )
+              })}
+              <circle cx="100" cy="100" r="9" fill="#e2e8f0" stroke="#334155" strokeWidth="2" />
+            </svg>
+          </div>
+          <div className="mt-3 text-center text-sm">
+            {runners.length === 0
+              ? <span className="text-gray-400">{t('basesEmpty')}</span>
+              : runners.map(r => (
+                <span key={`${r.base}-${r.playerId}`}
+                  className="inline-block mr-1.5 mb-1 px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 text-xs font-medium">
                   {r.base}B {nameOf(r.playerId) ?? '—'}
                 </span>
               ))}
-        </div>
-      </div>
-
-      {/* 当前打者 */}
-      <div className="bg-white rounded shadow p-4 mb-4 flex justify-between items-center">
-        <div>
-          <h2 className="text-lg font-bold mb-1">{t('currentBatter')}</h2>
-          <div className="text-2xl font-bold">
-            {currentBatter ? nameOf(currentBatter) : <span className="text-gray-400">{t('noLineup')}</span>}
           </div>
-        </div>
-        <div className="text-right text-sm">
-          <div className="text-gray-500">{t('pitcher')}</div>
-          <div className="font-bold">{currentPitcher ? nameOf(currentPitcher) : '—'}</div>
-        </div>
+        </Panel>
+
+        {/* 当前打者 / 投手 */}
+        <Panel title={t('currentBatter')}>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <div className="text-xs text-gray-500">{t('currentBatter')}</div>
+              <div className="text-xl font-bold text-gray-800">
+                {currentBatter ? nameOf(currentBatter) : <span className="text-gray-400">{t('noLineup')}</span>}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-gray-500">{t('currentPitcher')}</div>
+              <div className="text-xl font-bold text-gray-800">
+                {currentPitcher ? nameOf(currentPitcher) : '—'}
+              </div>
+            </div>
+          </div>
+          <div className="mt-4 pt-3 border-t border-gray-100 text-xs text-gray-500 flex flex-wrap gap-x-4 gap-y-1">
+            <span>{t('finalInning')}: {game.finalInning}</span>
+            <span>{t('runLimit')}: {game.runLimit > 0 ? game.runLimit : '—'}</span>
+            <span>{t('outs')}: {game.outs}/3</span>
+          </div>
+        </Panel>
       </div>
 
       {/* 记分按钮 */}
-      {writable ? (
-        <div className="bg-white rounded shadow p-4 mb-4">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-bold">{t('recordResult')}</h2>
+      {writable && (
+        <Panel
+          title={t('recordResult')}
+          actions={
             <button onClick={toggleQuick}
-              className={`px-3 py-1 rounded text-sm ${quickMode ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}>
+              className={`px-3 py-1 rounded-lg text-xs font-medium ${quickMode ? 'bg-slate-800 text-white' : 'bg-gray-100 text-gray-600'}`}>
               {quickMode ? t('quickMode') : t('fullMode')}
             </button>
+          }>
+          {/* 投球计数 */}
+          <div className="flex flex-wrap items-center gap-2 mb-4 pb-4 border-b border-gray-100">
+            <span className="text-xs text-gray-500 font-medium">{t('pitchCount')}:</span>
+            <span className="text-sm font-bold tabular-nums mr-2">
+              {pitchCounts.balls}-{pitchCounts.strikes}
+            </span>
+            <button onClick={() => addPitch('B')} disabled={busy}
+              className="px-3 py-1 rounded-lg bg-slate-700 text-white text-xs font-medium hover:bg-slate-600 disabled:opacity-50">
+              {t('ballShort')}
+            </button>
+            <button onClick={() => addPitch('S')} disabled={busy}
+              className="px-3 py-1 rounded-lg bg-slate-700 text-white text-xs font-medium hover:bg-slate-600 disabled:opacity-50">
+              {t('strikeShort')}
+            </button>
+            <button onClick={() => addPitch('F')} disabled={busy}
+              className="px-3 py-1 rounded-lg bg-slate-700 text-white text-xs font-medium hover:bg-slate-600 disabled:opacity-50">
+              {t('foulShort')}
+            </button>
+            {pitches.length > 0 && (
+              <button onClick={() => setPitches([])}
+                className="px-2 py-1 rounded-lg text-xs text-gray-500 hover:bg-gray-100">
+                {t('clearPitch')}
+              </button>
+            )}
+            <span className="text-[11px] text-gray-400 ml-auto">
+              {pitches.length > 0 ? pitches.join(' · ') : ''}
+            </span>
           </div>
+
           <div className="grid grid-cols-4 md:grid-cols-6 gap-2">
             {panelResults.map(r => (
               <button key={r.value} onClick={() => record(r.value)} disabled={busy}
-                className={`${quickMode ? 'p-4 text-lg' : 'p-3'} rounded font-bold text-white disabled:opacity-50
-                  ${RESULT_CATEGORIES.outs.items.includes(r.value) ? 'bg-gray-700 hover:bg-gray-600'
-                    : RESULT_CATEGORIES.walks.items.includes(r.value) ? 'bg-amber-600 hover:bg-amber-500'
-                    : 'bg-green-800 hover:bg-green-700'}`}>
+                className={`${quickMode ? 'p-4 text-lg' : 'p-3 text-sm'} rounded-xl font-bold text-white
+                  transition-colors disabled:opacity-50 ${toneFor(r.value)}`}>
                 {r.label}
               </button>
             ))}
           </div>
-        </div>
-      ) : (
-        !isDone && (
-          <div className="bg-gray-100 text-gray-600 rounded p-3 mb-4 text-center">{t('cannotRecord')}</div>
-        )
+        </Panel>
+      )}
+
+      {!writable && !isDone && (
+        <Panel><div className="py-6 text-center text-gray-500 text-sm">{t('cannotRecord')}</div></Panel>
       )}
 
       {/* 操作 */}
       {isLive && (
-        <div className="flex flex-wrap gap-3 mb-4">
+        <div className="flex flex-wrap gap-2 mb-4">
           {canWrite('games') && (
             <>
-              <button onClick={endHalf} className="bg-blue-800 text-white px-4 py-2 rounded">
-                {t('endHalf')}
-              </button>
-              <button onClick={endGame} className="bg-red-800 text-white px-4 py-2 rounded">
-                {t('endGame')}
-              </button>
+              <Button variant="info" onClick={endHalf}>{t('endHalf')}</Button>
+              <Button variant="danger" onClick={endGame}>{t('endGame')}</Button>
             </>
           )}
-          <button onClick={() => setShowSubs(v => !v)}
-            className="bg-gray-700 text-white px-4 py-2 rounded">
+          <Button variant="secondary" onClick={() => setShowSubs(v => !v)}>
             {t('substitution')} ({subs.length})
-          </button>
+          </Button>
         </div>
       )}
 
-      {/* 换人记录 */}
-      {showSubs && (
-        <div className="bg-white rounded shadow p-4 mb-4">
-          <h2 className="text-lg font-bold mb-3">{t('substitution')}</h2>
-          {subs.length === 0
-            ? <p className="text-gray-500 text-sm">{t('noSubstitutions')}</p>
-            : (
-              <table className="w-full text-sm">
-                <thead className="bg-gray-100">
-                  <tr>
-                    <th className="p-2 text-left">{t('inningCol')}</th>
-                    <th className="p-2 text-left">{t('type')}</th>
-                    <th className="p-2 text-left">{t('name')}</th>
-                    <th className="p-2 text-left">{t('substitutionReason')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {subs.map(s => (
-                    <tr key={s.id} className="border-t">
-                      <td className="p-2">{s.inning}{s.half === 'top' ? t('topHalf') : t('bottomHalf')}</td>
-                      <td className="p-2">{s.type === 'PINCH_RUN' ? t('pinchRun') : t('pinchHit')}</td>
-                      <td className="p-2">{s.originalPlayerName} → {s.substitutePlayerName}</td>
-                      <td className="p-2 text-gray-600">{s.reason || '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-        </div>
+      {/* 逐局比分表 */}
+      {boxStats?.lineScore && (
+        <Panel title={t('boxScore')} className="mb-4" dense>
+          <BoxScore
+            lineScore={boxStats.lineScore}
+            totals={boxStats.totals}
+            awayName={game.awayTeamName}
+            homeName={game.homeTeamName} />
+        </Panel>
       )}
 
-      {/* 阵容确认与打印 */}
-      <div className="bg-white rounded shadow p-4 mt-4">
-        <div className="flex justify-between items-center mb-3">
-          <h2 className="text-lg font-bold">{t('changeLineup')}</h2>
-          {canWrite('games') && (
-            <div className="flex gap-2">
-              <button onClick={() => setShowPrint(true)}
-                className="bg-blue-800 text-white px-3 py-1 rounded text-sm">{t('preview')}</button>
-            </div>
-          )}
-        </div>
+      {/* 阵容 */}
+      <Panel title={t('changeLineup')} className="mb-4">
         <div className="grid md:grid-cols-2 gap-4">
           {['home', 'away'].map(side => {
             const lineup = side === 'home' ? game.homeLineup : game.awayLineup
             const confirmed = side === 'home' ? game.homeConfirmed : game.awayConfirmed
             const teamName = side === 'home' ? game.homeTeamName : game.awayTeamName
+            const pitcherId = side === 'home' ? game.homePitcherId : game.awayPitcherId
             return (
-              <div key={side} className="border rounded p-3">
+              <div key={side} className="border border-gray-200 rounded-xl p-3">
                 <div className="flex justify-between items-center mb-2">
-                  <h3 className="font-bold">{side === 'home' ? t('homeTeam') : t('awayTeam')}: {teamName}</h3>
+                  <h3 className="font-bold text-sm">
+                    {side === 'home' ? t('homeTeam') : t('awayTeam')}: {teamName}
+                  </h3>
                   {confirmed
-                    ? <span className="text-green-700 text-sm font-bold">{t('lineupConfirmed')}</span>
-                    : <span className="text-gray-400 text-sm">—</span>}
+                    ? <span className="text-emerald-700 text-xs font-bold">{t('lineupConfirmed')}</span>
+                    : <span className="text-gray-400 text-xs">—</span>}
                 </div>
-                <ol className="text-sm space-y-1 mb-3">
+                <ol className="text-sm space-y-0.5 mb-3">
                   {(lineup || []).length === 0
                     ? <li className="text-gray-400">{t('noLineup')}</li>
                     : lineup.map((pid, i) => (
                         <li key={`${side}-${i}`} className="flex gap-2">
-                          <span className="text-gray-400 w-6">{i + 1}.</span>
+                          <span className="text-gray-400 w-5 tabular-nums">{i + 1}.</span>
                           <span>{nameOf(pid) ?? '—'}</span>
                         </li>
                       ))}
                 </ol>
+                <div className="text-xs text-gray-500 mb-2">
+                  {t('pitcher')}: {pitcherId ? nameOf(pitcherId) : '—'}
+                </div>
                 {canWrite('games') && !isDone && (
                   confirmed ? (
-                    <button onClick={() => reopenLineup(side)}
-                      className="text-xs text-gray-500 underline">{t('edit')}</button>
+                    <button onClick={async () => {
+                      try { await api.games.reopenLineup(game.id, side); await loadGame() } catch (e) { setError(e.message) }
+                    }}
+                      className="text-xs text-gray-500 underline">{t('unlockLineup')}</button>
                   ) : (
-                    <button onClick={() => doConfirmLineup(side)}
-                      className="bg-green-800 text-white px-3 py-1 rounded text-sm">
+                    <button onClick={async () => {
+                      try { await api.games.confirmLineup(game.id, side); await loadGame() } catch (e) { setError(e.message) }
+                    }}
+                      className="px-3 py-1 rounded-lg bg-emerald-700 text-white text-xs font-medium hover:bg-emerald-600">
                       {t('confirmLineup')}
                     </button>
                   )
@@ -403,50 +448,48 @@ function GameLive() {
             )
           })}
         </div>
-        {showPrint && (
-          <div className="fixed inset-0 bg-black/50 overflow-auto p-8 z-50">
-            <div className="bg-white max-w-3xl mx-auto">
-              <div className="flex justify-end p-3 no-print">
-                <button onClick={() => setShowPrint(false)}
-                  className="px-3 py-1 rounded bg-gray-200">✕</button>
-              </div>
-              <LineupPrintCard game={game} players={players} teamSide="away" />
-              <LineupPrintCard game={game} players={players} teamSide="home" />
-            </div>
-          </div>
-        )}
-      </div>
+      </Panel>
+
+      {/* 换人记录 */}
+      {showSubs && (
+        <Panel title={t('substitution')} className="mb-4">
+          {subs.length === 0
+            ? <p className="text-gray-400 text-sm">{t('noSubstitutions')}</p>
+            : (
+              <StatTable
+                compact
+                rows={subs}
+                rowKey={s => s.id}
+                columns={[
+                  { key: 'inning', label: t('inningCol'), align: 'center', render: s => `${s.inning}${s.half === 'top' ? t('topHalf') : t('bottomHalf')}` },
+                  { key: 'type', label: t('substitution'), render: s => (s.type === 'PINCH_RUN' ? t('pinchRun') : t('pinchHit')) },
+                  { key: 'players', label: t('playerName'), sortable: false, render: s => `${s.originalPlayerName || '—'} → ${s.substitutePlayerName || '—'}` },
+                  { key: 'reason', label: t('substitutionReason'), sortable: false, render: s => s.reason || '—' },
+                ]} />
+            )}
+        </Panel>
+      )}
 
       {/* 打席记录 */}
-      <div className="bg-white rounded shadow p-4">
-        <h2 className="text-lg font-bold mb-4">{t('plateAppearances')}</h2>
+      <Panel title={t('plateAppearances')} dense>
         {(game.plateAppearances || []).length === 0
-          ? <p className="text-gray-500 text-sm">—</p>
+          ? <div className="py-6 text-center text-gray-400 text-sm">—</div>
           : (
-            <table className="w-full text-sm">
-              <thead className="bg-gray-100">
-                <tr>
-                  <th className="p-2 text-left">{t('inningCol')}</th>
-                  <th className="p-2 text-left">{t('batterCol')}</th>
-                  <th className="p-2 text-left">{t('pitcherCol')}</th>
-                  <th className="p-2 text-left">{t('resultCol')}</th>
-                  <th className="p-2 text-left">{t('rbiCol')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {game.plateAppearances.map(pa => (
-                  <tr key={pa.id} className="border-t">
-                    <td className="p-2">{pa.inning}{pa.half === 'top' ? t('topHalf') : t('bottomHalf')}</td>
-                    <td className="p-2">{pa.batterName || '—'}</td>
-                    <td className="p-2">{pa.pitcherName || '—'}</td>
-                    <td className="p-2 font-bold">{RESULT_LABELS[pa.result] || pa.result}</td>
-                    <td className="p-2">{pa.rbi || 0}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <StatTable
+              compact
+              rows={game.plateAppearances}
+              rowKey={pa => pa.id}
+              columns={[
+                { key: 'inning', label: t('inningCol'), align: 'center', render: pa => `${pa.inning}${pa.half === 'top' ? t('topHalf') : t('bottomHalf')}` },
+                { key: 'batterName', label: t('batterCol'), render: pa => pa.batterName || '—' },
+                { key: 'pitcherName', label: t('pitcherCol'), render: pa => pa.pitcherName || '—' },
+                { key: 'result', label: t('resultCol'), render: pa => (
+                  <span className="font-bold">{RESULT_LABELS[pa.result] || pa.result}</span>
+                ) },
+                { key: 'rbi', label: t('rbiCol'), align: 'right', render: pa => pa.rbi || 0 },
+              ]} />
           )}
-      </div>
+      </Panel>
     </div>
   )
 }

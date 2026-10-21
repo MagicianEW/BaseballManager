@@ -87,6 +87,8 @@ db.exec(`
     homeConfirmed INTEGER DEFAULT 0,
     awayConfirmed INTEGER DEFAULT 0,
     finalInning INTEGER DEFAULT 6,
+    -- U10 常见规则：每局最多得分（0 = 不限制）
+    runLimit INTEGER DEFAULT 0,
     createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (homeTeamId) REFERENCES teams(id),
     FOREIGN KEY (awayTeamId) REFERENCES teams(id)
@@ -150,6 +152,7 @@ ensureColumn('games', 'runners', "TEXT DEFAULT '[]'")
 ensureColumn('games', 'homeConfirmed', 'INTEGER DEFAULT 0')
 ensureColumn('games', 'awayConfirmed', 'INTEGER DEFAULT 0')
 ensureColumn('games', 'finalInning', 'INTEGER DEFAULT 6')
+ensureColumn('games', 'runLimit', 'INTEGER DEFAULT 0')
 ensureColumn('plate_appearances', 'scoredRunners', "TEXT DEFAULT '[]'")
 
 // 历史库迁移：confirmed(单数) 拆分为 homeConfirmed / awayConfirmed

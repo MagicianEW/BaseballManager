@@ -99,18 +99,40 @@ npm run dev                                          # http://localhost:5173
 
 `/api/v1/games` 作为历史路径别名保留。
 
-### 计分口径
-
-| 概念 | 说明 |
-|---|---|
-| `runners` | 垒上跑者数组 `[{playerId, base}]`，`base ∈ {1,2,3}`，是计分的唯一真相来源 |
-| `baseSituation` | 位掩码 0-7，**由 `runners` 派生**，仅供 UI 局面图显示，不参与计分 |
-| `runsScored` | 本打席推进回本垒的跑者数（含全垒打打者自己） |
-| `rbi` | `runsScored - (全垒打 ? 1 : 0)`。官方口径下全垒打打者自己跑回本垒那分不计 RBI，因此**满垒全垒打 = 4 得分 / 3 RBI** |
-| `outs` | 三振/接地/飞球记 1 出局，双杀（GDP）记 2 出局 |
-| 打线轮转 | 按实际打线长度轮转，支持 8/9/10 人 |
-
 `resolvePlay()` 是纯函数，无 I/O 依赖，覆盖 15 种打席结果，并有不变量测试保证「任一垒包最多一名跑者」。
+
+### 统计指标
+
+统计口径参照 MLB 官方计分与 Baseball-Reference，全部从 `plate_appearances` 实时汇总：
+
+| 指标 | 公式 | 说明 |
+|---|---|---|
+| 打击率 BA | `H / AB` | |
+| 上垒率 OBP | `(H + BB + HBP) / (AB + BB + HBP + SF)` | IBB 计入 BB，HBP 单列 |
+| 长打率 SLG | `TB / AB` | `TB = 1×1B + 2×2B + 3×3B + 4×HR` |
+| 整体攻击 OPS | `OBP + SLG` | 单数字评估打者 |
+| 纯长打率 ISO | `SLG − BA` | 剥离一垒安打，只看长打能力 |
+| 长打 XBH | `2B + 3B + HR` | |
+| 垒打数 TB | `1×1B + 2×2B + 3×3B + 4×HR` | |
+| 场内安打率 BABIP | `(H − HR) / (AB − SO − GDP + SF)` | 排除全垒打与三振 |
+| 三振率 K% | `SO / AB` | |
+| 保送率 BB% | `BB / PA` | |
+| 三振保送比 K/BB | `SO / BB` | |
+
+投手侧提供投球局数 IP、自责分 ER、被安打 H、保送 BB、三振 SO、自责分率 ERA、每局被上垒率 WHIP。
+
+> 公式实现在 `server/services/statMath.js`，是**不依赖数据库的纯函数**，测试直接 import 该模块
+> —— 而非把公式复制进测试文件（旧版 `test_2b_logic.mjs` 正是那样做的，改了生产代码也不会红）。
+
+### 比赛规则
+
+支持 U10 青少年联赛常见规则：
+
+- **每局得分上限**（`runLimit`，如 5 分）：本半局得分达到上限自动换半局，0 表示不限制
+- **宽恕规则**：领先 10 分（过 4 局）/ 15 分（过 3 局）/ 8 分（过 5 局）自动结束比赛
+- **投球数记录**：逐球记录坏球/好球/界外，打席的投球序列随记录保存
+- **逐局比分表**：Box Score 按局统计得分、安打、失误
+- **最终局数**（`finalInning`）：打满即自动结束比赛
 
 ### 数据与隐私
 
@@ -147,6 +169,44 @@ npm run migrate    # 幂等：补 runners 列、拆分 confirmed、回填数据�
 位掩码不含跑者身份，回填的 `playerId` 为 `null`，界面上显示为「—」；比分与统计不受影响。
 
 ### 版本历史
+
+#### v0.3.0
+
+补齐 MLB 统计指标与 U10 比赛规则，��写统计页与记分页。
+
+**修复**
+
+| 问题 | 说明 |
+|---|---|
+| 统计页永远显示全 0 | `Stats.jsx` 定义了 `getPlayerStats` 却从未调用，而表格取的是 `player.ab` —— `players` 表根本没有统计列 |
+| OBP 把触身球重复计算 | `bb` 统计里已含 HBP，公式又加了一次 HBP |
+| 投球数统计缺失 | `games.balls` / `strikes` 恒为 0，`pitches` 字段从未解析成数组 |
+| 打印阵容卡从未接线 | 组件存在但无任何页面引用；且守备位置硬编码中文，切语言无效 |
+| 比赛列表信息不足 | 无状态筛选、无逐局比分、无快捷操作，阵容确认状态与规则参数均不展示 |
+
+**新增统计指标**（MLB 官方计分 / Baseball-Reference 口径）
+
+打击率 BA、上垒率 OBP、长打率 SLG、整体攻击指数 OPS、纯长打率 ISO、长打 XBH、垒打数 TB、
+场内安打率 BABIP、三振率 K%、保送率 BB%、三振保送比 K/BB；
+投手侧：投球局数 IP、自责分 ER、被安打 H、保送 BB、三振 SO、自责分率 ERA、每局被上垒率 WHIP。
+
+**新增比赛规则**
+
+每局得分上限（U10 常见 5 分）、宽恕规则、最终局数、逐局 Box Score、逐球投球记录。
+
+**UI 重做**
+
+- 新增共享 UI 组件库 `src/components/ui`（Panel / StatTable / StatBadge / BoxScore / EmptyState / SegmentedControl / Button）
+- 记分页改为深色大比分板 + 标准菱形垒包图 + 垒上跑者姓名 + 投球计数条 + Box Score + 阵容面板
+- 统计页支持队伍/球员双视图、可排序表格、球员详情面板
+- 比赛列表改为卡片式，带状态筛选与快捷操作
+- 打印阵容卡支持 `@media print`，位置名走 i18n
+
+**工程**
+
+- 抽出 `server/services/statMath.js` 纯计算模块，测试直接 import 生产代码（此前把公式复制进测试文件，生产代码改了也不会红）
+- i18n 拆分为页面级分片（`src/i18n/*.js`），避免多人同时改 900 行的 AppContext
+- 翻译合并优先级改为「分片 > 主表」，并增加跨语言 key 一致性校验
 
 #### v0.2.0
 
@@ -257,9 +317,41 @@ Default account: `admin` / `admin` — **create a new admin from Settings on fir
 
 Permissions are enforced **server-side** (`server/middleware/auth.js`); client-side button visibility is UX only.
 
-### Scoring
+`resolvePlay()` is a pure function with no I/O, covering 15 batter results, with invariant tests guaranteeing “at most one runner per base”.
 
-`runners` (`[{playerId, base}]`) is the single source of truth. `baseSituation` (0-7 bitmask) is derived from it for the UI only. `rbi = runsScored - (HR ? 1 : 0)`, so a bases-loaded home run is 4 runs / 3 RBI.
+### Statistics
+
+Following MLB official scoring and Baseball-Reference, all aggregated live from `plate_appearances`:
+
+| Metric | Formula | Notes |
+|---|---|---|
+| Batting Average BA | `H / AB` | |
+| On-base % OBP | `(H + BB + HBP) / (AB + BB + HBP + SF)` | IBB counts in BB; HBP tracked separately |
+| Slugging % SLG | `TB / AB` | `TB = 1×1B + 2×2B + 3×3B + 4×HR` |
+| OPS | `OBP + SLG` | Single-number hitting summary |
+| Isolated Power ISO | `SLG − BA` | Extra-base power only |
+| Extra Base Hits XBH | `2B + 3B + HR` | |
+| Total Bases TB | `1×1B + 2×2B + 3×3B + 4×HR` | |
+| BABIP | `(H − HR) / (AB − SO − GDP + SF)` | Excludes HR and strikeouts |
+| Strikeout % K% | `SO / AB` | |
+| Walk % BB% | `BB / PA` | |
+| K/BB | `SO / BB` | |
+
+Pitching side provides IP, ER, H, BB, SO, ERA and WHIP.
+
+> The formulas live in `server/services/statMath.js` — a **pure module with no database dependency** —
+> so tests import the production code directly rather than copying the formulas
+> (the old `test_2b_logic.mjs` copied them, so production changes never broke the test).
+
+### Game Rules
+
+Supports common U10 youth league rules:
+
+- **Run limit per inning** (`runLimit`, e.g. 5): the half-inning ends automatically when the limit is reached; 0 = no limit
+- **Mercy rule**: a 10-run lead after 4 innings (15 after 3, 8 after 5) ends the game automatically
+- **Pitch tracking**: record ball / strike / foul pitch by pitch; the sequence is saved with the plate appearance
+- **Box score**: runs, hits and errors broken down by inning
+- **Final innings** (`finalInning`): the game completes automatically when reached
 
 ### Testing
 
@@ -292,6 +384,43 @@ npm run migrate
 ```
 
 ### Changelog
+
+#### v0.3.0
+
+Adds MLB-grade statistics and U10 game rules, and rebuilds the stats and scoring pages.
+
+**Fixes**
+
+| Issue | Detail |
+|---|---|
+| Statistics page always showed zeros | `Stats.jsx` defined `getPlayerStats` but never called it, reading `player.ab` — a column the `players` table never had |
+| OBP double-counted hit-by-pitch | HBP was already inside the `bb` tally and added again by the formula |
+| No pitch tracking | `games.balls` / `strikes` stayed 0 and `pitches` was never parsed into an array |
+| Lineup card was never wired up | The component existed but no page referenced it, and positions were hardcoded Chinese so switching language did nothing |
+| Game list lacked context | No status filter, no box score, no quick actions; lineup-confirmation state and rule settings were invisible |
+
+**New metrics** (MLB official scoring / Baseball-Reference)
+
+BA, OBP, SLG, OPS, ISO, XBH, TB, BABIP, K%, BB%, K/BB;
+pitching: IP, ER, H, BB, SO, ERA, WHIP.
+
+**New rules**
+
+Run limit per inning (commonly 5 in U10), mercy rule, final innings, inning-by-inning box score, pitch-by-pitch tracking.
+
+**UI rebuild**
+
+- New shared component library `src/components/ui` (Panel / StatTable / StatBadge / BoxScore / EmptyState / SegmentedControl / Button)
+- Scoring page: dark high-contrast scoreboard, standard diamond base diagram with runner names, pitch counter, box score, lineup panel
+- Stats page: team/player views, sortable table, player detail panel
+- Games list: card layout with status filter and quick actions
+- Printable lineup card with `@media print`, positions routed through i18n
+
+**Engineering**
+
+- Extracted `server/services/statMath.js` as a pure module; tests import production code directly (previously the formulas were copied into the test file, so production changes never broke the test)
+- i18n split into per-page slices (`src/i18n/*.js`) so several pages can be edited without touching one 900-line file
+- Slice-over-base merge priority, plus a cross-language key consistency check
 
 #### v0.2.0
 
@@ -378,6 +507,39 @@ npm run dev                                          # :5173
 
 権限は**サーバー側で強制**されます（`server/middleware/auth.js`）。フロントエンドのボタン表示はUXのためだけです。
 
+### 統計指標
+
+MLB 公式計分と Baseball-Reference に従い、すべて `plate_appearances` からリアルタイム集計：
+
+| 指標 | 公式 | 備考 |
+|---|---|---|
+| 打率 BA | `H / AB` | |
+| 出塁率 OBP | `(H + BB + HBP) / (AB + BB + HBP + SF)` | IBB は BB に含む、HBP は単独 |
+| 長打率 SLG | `TB / AB` | `TB = 1×1B + 2×2B + 3×3B + 4×HR` |
+| OPS | `OBP + SLG` | 打者を1つの数字で評価 |
+| 純長打率 ISO | `SLG − BA` | 長打力のみを抽出 |
+| 長打 XBH | `2B + 3B + HR` | |
+| 塁打数 TB | `1×1B + 2×2B + 3×3B + 4×HR` | |
+| BABIP | `(H − HR) / (AB − SO − GDP + SF)` | 本塁打と三振を除く |
+| 三振率 K% | `SO / AB` | |
+| 四球率 BB% | `BB / PA` | |
+| 三振/四球 | `SO / BB` | |
+
+投手側は投球回 IP、自責点 ER、被安打 H、四球 BB、三振 SO、防御率 ERA、WHIP を提供。
+
+> 計算式は `server/services/statMath.js` にあり、**DB に依存しない純モジュール**です。
+> テストは本番コードを直接 import します（古い `test_2b_logic.mjs` は式をテストファイルにコピーしていたため、本番変更が検知できませんでした）。
+
+### 試合ルール
+
+U10 少年リーグの常见ルールに対応：
+
+- **1回最大得点**（`runLimit`、例：5）：その回で上限に達したら自動で攻防終了。0 は無制限
+- **mercy rule（圧縮試合）**：3回終了時15点、4回終了時10点、5回終了時8点のリードで自動終了
+- **投球記録**：ボール/ストライク/ファウルを1球ずつ記録し、打席とともに保存
+- **スコアボード**：回ごとの得点・安打・失点を表示
+- **最終回**（`finalInning`）：到達で自動終了
+
 ### テスト
 
 ```bash
@@ -409,6 +571,43 @@ npm run migrate
 ```
 
 ### 変更履歴
+
+#### v0.3.0
+
+MLB水準の統計指標とU10試合ルールを追加し、統計ページとスコア入力ページを刷新。
+
+**修正**
+
+| 問題 | 内容 |
+|---|---|
+| 統計ページが常に0表示 | `Stats.jsx` は `getPlayerStats` を定義したが未呼び出し。`player.ab`（存在しない列）を参照していた |
+| OBP で死球を二重計上 | `bb` に HBP が既に含まれ、式でもう一度加算していた |
+| 投球記録がない | `games.balls` / `strikes` は常に0、`pitches` は配列に解析されず |
+| 打印カードが未接続 | コンポーネントは存在するが参照するページなし。守備位置も中文ハードコードで言語切替が無効 |
+| 試合一覧の情報不足 | 状態フィルタ・スコアボード・クイック操作なし。陣容確定状態やルール設定も非表示 |
+
+**新規統計指標**（MLB公式計分 / Baseball-Reference 準拠）
+
+BA、OBP、SLG、OPS、ISO、XBH、TB、BABIP、K%、BB%、K/BB。
+投手側は IP、ER、H、BB、SO、ERA、WHIP。
+
+**新規試合ルール**
+
+1回最大得点（U10では5が一般的）、mercy rule、最終回、回ごとのスコアボード、1球ごとの投球記録。
+
+**UI刷新**
+
+- 共通UIコンポーネント `src/components/ui` を新設（Panel / StatTable / StatBadge / BoxScore / EmptyState / SegmentedControl / Button）
+- スコア入力ページ：暗色の大スコアボード、標準ダイヤ型の塁表示と走者名、投球カウンター、スコアボード、陣容パネル
+- 統計ページ：チーム/選手ビュー、ソート可能テーブル、選手詳細
+- 試合一覧：カードレイアウト、状態フィルタ、クイック操作
+- 打印カードは `@media print` 対応、守備位置は i18n 経由
+
+**技術**
+
+- `server/services/statMath.js` を純粋モジュールとして分離。テストは本番コードを直接 import（以前は式をテストファイルにコピーしていたため本番変更が検知されなかった）
+- i18n をページ単位のスライスへ分割（`src/i18n/*.js`）
+- 優先順位を「スライス > 基底表」に変更し、言語間のキー整合性チェックを追加
 
 #### v0.2.0
 
